@@ -1,0 +1,6 @@
+{
+  "name": "FluxoCaixa Pro - Gestão Financeira & Recuperação Fiscal 12M",
+  "description": "Motor de Projeção de Fluxo de Caixa (Rolling Forecast 12 Meses), Gestão de Cartões de Crédito com Importação CSV, Envelopes Orçado vs Realizado e Recuperação Fiscal.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
