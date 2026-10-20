@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { FinanceProvider, useFinance } from './context/FinanceContext';
 import { Sidebar } from './components/Sidebar';
 import { DashboardTab } from './components/tabs/DashboardTab';
@@ -21,6 +21,9 @@ import { QuickExpenseModal } from './components/modals/QuickExpenseModal';
 import { RealInvoiceModal } from './components/modals/RealInvoiceModal';
 import { FirebaseBackupModal } from './components/modals/FirebaseBackupModal';
 import { RoutineChecklistModal } from './components/modals/RoutineChecklistModal';
+import { LoginScreen } from './components/LoginScreen';
+import { getAuthInstance, logoutUser } from './services/authService';
+import { User, onAuthStateChanged, signOut } from 'firebase/auth';
 import {
   Menu,
   PlusCircle,
@@ -31,11 +34,16 @@ import {
   Cloud,
   CheckCircle2,
   AlertCircle,
+  LogOut,
+  User as UserIcon,
 } from 'lucide-react';
 import { formatBRL } from './utils/calculations';
 
+interface MainAppProps {
+  currentUser: User;
+}
 
-function MainApp() {
+function MainApp({ currentUser }: MainAppProps) {
   const {
     activeTab,
     loading,
@@ -143,8 +151,8 @@ function MainApp() {
             </div>
           </div>
 
-          {/* Quick Action Buttons (Only Salvar no Firebase and Novo Lançamento) */}
-          <div className="flex items-center gap-2">
+          {/* Quick Action Buttons & User Profile */}
+          <div className="flex items-center gap-2.5">
             <button
               onClick={handleSyncToFirebase}
               disabled={isSavingToFirebase}
@@ -166,6 +174,22 @@ function MainApp() {
               <PlusCircle className="w-3.5 h-3.5 stroke-[2.5]" />
               <span>Novo Lançamento</span>
             </button>
+
+            <div className="h-5 w-px bg-zinc-800 mx-1" />
+
+            <div className="flex items-center gap-2 pl-1">
+              <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-zinc-900 border border-zinc-800 text-xs text-zinc-300">
+                <UserIcon className="w-3.5 h-3.5 text-emerald-400" />
+                <span className="truncate max-w-[140px]">{currentUser.email}</span>
+              </div>
+              <button
+                onClick={() => logoutUser()}
+                className="p-2 rounded-lg bg-zinc-900 hover:bg-rose-950/40 text-zinc-400 hover:text-rose-400 border border-zinc-800 hover:border-rose-500/30 transition"
+                title="Sair da Conta"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+            </div>
           </div>
         </header>
 
@@ -203,23 +227,18 @@ function MainApp() {
               onOpenCsvImport={() => setIsCsvModalOpen(true)}
             />
           )}
-
           {activeTab === 'matrix' && (
             <MatrixTab
               onOpenNewTransaction={() => setIsNewTxModalOpen(true)}
               onOpenCsvImport={() => setIsCsvModalOpen(true)}
             />
           )}
-
           {activeTab === 'monthly' && (
             <MonthlyControlTab
               onOpenQuickExpense={handleOpenQuickExpense}
               onOpenNewTransaction={() => setIsNewTxModalOpen(true)}
             />
           )}
-
-          {activeTab === 'closing' && <MonthlyClosingTab />}
-
           {activeTab === 'cards' && (
             <CardsTab
               onOpenNewTransaction={() => setIsNewTxModalOpen(true)}
@@ -227,32 +246,16 @@ function MainApp() {
               onOpenRealInvoiceModal={handleOpenRealInvoice}
             />
           )}
-
           {activeTab === 'variables' && (
             <VariableIncomesTab
               onOpenNewTransaction={() => setIsNewTxModalOpen(true)}
             />
           )}
-
           {activeTab === 'raiox' && <RaioXTab />}
-
+          {activeTab === 'closing' && <MonthlyClosingTab />}
+          {(activeTab === 'config' || activeTab === 'settings') && <ConfigTab />}
           {activeTab === 'simulation' && <SimulationTab />}
-
-          {activeTab === 'config' && <ConfigTab />}
         </main>
-
-
-        {/* Footer */}
-        <footer className="border-t border-zinc-900 bg-zinc-950 py-4 text-center text-xs text-zinc-400">
-          <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
-            <span>
-              FluxoPro • Gestão Financeira & Recuperação Fiscal 12M • Firebase Firestore
-            </span>
-            <span className="text-[11px] text-zinc-400">
-              Conectado ao Projeto: gen-lang-client-0435174156
-            </span>
-          </div>
-        </footer>
       </div>
 
       {/* Modals */}
@@ -291,10 +294,68 @@ function MainApp() {
   );
 }
 
+function AppContent() {
+  const { data, updateSettings, loading } = useFinance();
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [authChecking, setAuthChecking] = useState(true);
+
+  useEffect(() => {
+    const auth = getAuthInstance();
+    if (!auth) {
+      setAuthChecking(false);
+      return;
+    }
+    const unsubscribe = onAuthStateChanged(auth, (u) => {
+      if (u && u.email) {
+        const emailLower = u.email.toLowerCase().trim();
+        const allowed = data.settings.allowedEmails || [];
+        if (allowed.length === 0 || allowed.some((e) => e.toLowerCase().trim() === emailLower)) {
+          setCurrentUser(u);
+        } else {
+          signOut(auth);
+          setCurrentUser(null);
+        }
+      } else {
+        setCurrentUser(null);
+      }
+      setAuthChecking(false);
+    });
+    return () => unsubscribe();
+  }, [data.settings.allowedEmails]);
+
+  if (loading || authChecking) {
+    return (
+      <div className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center text-zinc-300">
+        <div className="w-10 h-10 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin mb-4" />
+        <span className="text-xs font-semibold tracking-wider uppercase text-zinc-400">
+          Carregando FluxoPro...
+        </span>
+      </div>
+    );
+  }
+
+  if (!currentUser) {
+    return (
+      <LoginScreen
+        allowedEmails={data.settings.allowedEmails}
+        onLoginSuccess={(u) => setCurrentUser(u)}
+        onAutoAddEmail={(email) => {
+          const current = data.settings.allowedEmails || [];
+          if (!current.includes(email)) {
+            updateSettings({ allowedEmails: [email, ...current] });
+          }
+        }}
+      />
+    );
+  }
+
+  return <MainApp currentUser={currentUser} />;
+}
+
 export default function App() {
   return (
     <FinanceProvider>
-      <MainApp />
+      <AppContent />
     </FinanceProvider>
   );
 }

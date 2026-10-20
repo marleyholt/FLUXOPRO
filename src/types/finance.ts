@@ -179,6 +179,7 @@ export interface AppSettings {
     timestamp: string;
   };
   checklistState?: Record<string, boolean>;
+  allowedEmails?: string[];
 }
 
 export interface AppData {

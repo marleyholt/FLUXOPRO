@@ -29,6 +29,7 @@ import { generateMysqlDump } from '../../utils/laravelSqlGenerator';
 export const ConfigTab: React.FC = () => {
   const {
     data,
+    updateSettings,
     addBankAccount,
     updateBankAccount,
     deleteBankAccount,
@@ -41,7 +42,26 @@ export const ConfigTab: React.FC = () => {
   } = useFinance();
 
   // Active sub-section
-  const [activeSection, setActiveSection] = useState<'banks' | 'cards' | 'envelopes' | 'migration'>('banks');
+  const [activeSection, setActiveSection] = useState<'banks' | 'cards' | 'envelopes' | 'access' | 'migration'>('banks');
+
+  // Access Management state
+  const [accessEmailInput, setAccessEmailInput] = useState('');
+
+  const handleAddAllowedEmail = (e: React.FormEvent) => {
+    e.preventDefault();
+    const email = accessEmailInput.toLowerCase().trim();
+    if (!email || !email.includes('@')) return;
+    const current = data.settings.allowedEmails || [];
+    if (current.includes(email)) return;
+    updateSettings({ allowedEmails: [...current, email] });
+    setAccessEmailInput('');
+  };
+
+  const handleRemoveAllowedEmail = (emailToRemove: string) => {
+    const current = data.settings.allowedEmails || [];
+    const updated = current.filter((e) => e !== emailToRemove);
+    updateSettings({ allowedEmails: updated });
+  };
 
   // Bank Account Modal State
   const [bankModalOpen, setBankModalOpen] = useState(false);
@@ -317,6 +337,17 @@ export const ConfigTab: React.FC = () => {
           >
             <Layers className="w-3.5 h-3.5" />
             <span>Categorias / Envelopes</span>
+          </button>
+          <button
+            onClick={() => setActiveSection('access')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 shrink-0 ${
+              activeSection === 'access'
+                ? 'bg-emerald-500 text-zinc-950 shadow-sm'
+                : 'text-zinc-400 hover:text-white'
+            }`}
+          >
+            <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Gerenciamento de Acessos</span>
           </button>
           <button
             onClick={() => setActiveSection('migration')}
@@ -598,6 +629,83 @@ export const ConfigTab: React.FC = () => {
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* SECTION: GERENCIAMENTO DE ACESSOS */}
+      {activeSection === 'access' && (
+        <div className="space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                Controle de Acesso por E-mail (Google Login)
+              </h3>
+              <p className="text-xs text-zinc-400">
+                Apenas os e-mails cadastrados abaixo terão permissão para entrar no sistema com a Conta Google.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Add Email Form */}
+            <div className="p-5 rounded-2xl bg-zinc-900/60 border border-zinc-800 space-y-4">
+              <h4 className="font-bold text-white text-xs flex items-center gap-2">
+                <Plus className="w-3.5 h-3.5 text-emerald-400" />
+                Adicionar Novo E-mail Autorizado
+              </h4>
+              <form onSubmit={handleAddAllowedEmail} className="space-y-3.5 text-xs">
+                <div className="space-y-1">
+                  <label className="font-semibold text-zinc-300">E-mail do Google</label>
+                  <input
+                    type="email"
+                    required
+                    placeholder="exemplo@gmail.com"
+                    value={accessEmailInput}
+                    onChange={(e) => setAccessEmailInput(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg bg-zinc-950 border border-zinc-700 text-white outline-none focus:border-emerald-500"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  className="w-full py-2.5 rounded-lg font-bold bg-emerald-500 hover:bg-emerald-400 text-zinc-950 transition shadow-sm"
+                >
+                  Autorizar E-mail
+                </button>
+              </form>
+            </div>
+
+            {/* List of Authorized Emails */}
+            <div className="p-5 rounded-2xl bg-zinc-900/60 border border-zinc-800 space-y-4">
+              <h4 className="font-bold text-white text-xs flex items-center gap-2">
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                E-mails com Acesso Liberado ({data.settings.allowedEmails?.length || 0})
+              </h4>
+              <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                {(!data.settings.allowedEmails || data.settings.allowedEmails.length === 0) ? (
+                  <div className="p-4 rounded-xl bg-zinc-950 border border-zinc-800 text-center text-zinc-500 text-xs">
+                    Nenhum e-mail restrito. O primeiro e-mail que fizer login será cadastrado automaticamente como administrador.
+                  </div>
+                ) : (
+                  data.settings.allowedEmails.map((email) => (
+                    <div
+                      key={email}
+                      className="flex items-center justify-between p-3 rounded-xl bg-zinc-950 border border-zinc-800 text-xs text-zinc-200"
+                    >
+                      <span className="font-mono">{email}</span>
+                      <button
+                        onClick={() => handleRemoveAllowedEmail(email)}
+                        className="p-1.5 rounded-lg text-rose-400 hover:bg-rose-500/10 transition"
+                        title="Remover acesso"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
           </div>
         </div>
       )}
