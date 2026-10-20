@@ -36,7 +36,12 @@ export function saveFirebaseConfig(configJson: string | null): void {
 function getFirestoreInstance(config: any): Firestore {
   const app = getApps().length === 0 ? initializeApp(config) : getApp();
   if (config.firestoreDatabaseId && config.firestoreDatabaseId !== '(default)') {
-    return getFirestore(app, config.firestoreDatabaseId);
+    try {
+      return getFirestore(app, config.firestoreDatabaseId);
+    } catch (e) {
+      console.warn('Named Firestore database failed, falling back to default:', e);
+      return getFirestore(app);
+    }
   }
   return getFirestore(app);
 }
