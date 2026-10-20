@@ -28,7 +28,7 @@ jobs:
           node-version: 20
 
       - name: Instalar Dependências
-        run: npm install
+        run: npm install --legacy-peer-deps
 
       - name: Compilar Aplicação (Build Vite)
         run: npm run build
