@@ -32,12 +32,19 @@ export interface Expense {
   paidMonths?: Record<string, boolean>; // key: 'YYYY-MM', value: true if paid
 }
 
+export interface BudgetSubItem {
+  id: string;
+  name: string;
+  amount: number;
+}
+
 export interface VariableBudgetCategory {
   id: string;
   name: string;
-  targetAmount: number; // Teto orçado mensal
+  targetAmount: number; // Teto orçado mensal (ou soma dos subitens)
   color?: string;
   icon?: string;
+  subItems?: BudgetSubItem[];
 }
 
 export interface VariableExpenseLog {

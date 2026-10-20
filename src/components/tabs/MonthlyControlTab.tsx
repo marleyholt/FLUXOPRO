@@ -22,6 +22,8 @@ import {
   Info,
   HelpCircle,
   Layers,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { useFinance } from '../../context/FinanceContext';
 import { formatBRL, getMonthDiff, getInstallmentInfo } from '../../utils/calculations';
@@ -50,6 +52,9 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
     updateBudgetEnvelopeTarget,
     updateBudgetEnvelope,
     deleteBudgetEnvelope,
+    addBudgetSubItem,
+    updateBudgetSubItem,
+    deleteBudgetSubItem,
     isMonthClosed,
     setActiveTab,
   } = useFinance();
@@ -59,6 +64,8 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
   const [billFilter, setBillFilter] = useState<'ALL' | 'PENDING' | 'PAID'>('ALL');
   const [editingEnvelopeId, setEditingEnvelopeId] = useState<string | null>(null);
   const [newTargetValue, setNewTargetValue] = useState<string>('');
+  const [minimizedEnvelopes, setMinimizedEnvelopes] = useState<Record<string, boolean>>({});
+  const [subItemInputs, setSubItemInputs] = useState<Record<string, { name: string; amount: string }>>({});
 
   // Nova Categoria Modal State
   const [isNewCategoryModalOpen, setIsNewCategoryModalOpen] = useState(false);
@@ -574,14 +581,41 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
             {/* Envelopes List */}
             <div className="space-y-4">
               {data.budgetEnvelopes.map((env) => {
+                // Variable logs for this envelope this month
                 const logs = data.variableExpenseLogs.filter(
                   (l) => l.categoryId === env.id && l.month === selectedMonth
                 );
-                const totalSpent = logs.reduce((acc, curr) => acc + curr.amount, 0);
-                const target = env.targetAmount;
+                const logsTotal = logs.reduce((acc, curr) => acc + curr.amount, 0);
+
+                // Credit card transactions assigned to this envelope/category this month
+                const cardTxForEnv = data.cardTransactions.filter((tx) => {
+                  if (tx.isPaused) return false;
+                  const matchesCategory = tx.category === env.name || tx.category === env.id;
+                  if (!matchesCategory) return false;
+
+                  if (tx.type === 'recurring') {
+                    return getMonthDiff(tx.startMonth, selectedMonth) >= 0;
+                  } else if (tx.type === 'installment') {
+                    return getInstallmentInfo(tx.startMonth, tx.totalInstallments, selectedMonth).isActive;
+                  } else if (tx.type === 'single') {
+                    return tx.startMonth === selectedMonth;
+                  }
+                  return false;
+                });
+                const cardTotalForEnv = cardTxForEnv.reduce((acc, curr) => acc + curr.installmentAmount, 0);
+
+                const totalSpent = logsTotal + cardTotalForEnv;
+
+                // Teto = soma dos subitens (se existirem), senão env.targetAmount
+                const subItemsSum = env.subItems && env.subItems.length > 0
+                  ? env.subItems.reduce((acc, curr) => acc + curr.amount, 0)
+                  : 0;
+                const target = env.subItems && env.subItems.length > 0 ? subItemsSum : env.targetAmount;
+
                 const percentage = target > 0 ? Math.round((totalSpent / target) * 100) : 100;
                 const remaining = target - totalSpent;
                 const isOverBudget = remaining < 0;
+                const isMinimized = !!minimizedEnvelopes[env.id];
 
                 // Color status
                 const statusColor =
@@ -594,12 +628,22 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
                 return (
                   <div
                     key={env.id}
-                    className="p-4 rounded-xl bg-zinc-950/80 border border-zinc-800 space-y-3"
+                    className="p-4 rounded-xl bg-zinc-950/80 border border-zinc-800 space-y-3 shadow-sm transition-all"
                   >
                     {/* Envelope Header */}
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                       <div className="flex items-center gap-2">
+                        {/* Minimize Button */}
+                        <button
+                          onClick={() => setMinimizedEnvelopes({ ...minimizedEnvelopes, [env.id]: !isMinimized })}
+                          className="p-1 rounded-lg text-zinc-400 hover:text-white bg-zinc-900 border border-zinc-800 transition"
+                          title={isMinimized ? "Expandir e ver detalhes" : "Minimizar categoria"}
+                        >
+                          {isMinimized ? <ChevronDown className="w-3.5 h-3.5 text-emerald-400" /> : <ChevronUp className="w-3.5 h-3.5 text-zinc-400" />}
+                        </button>
+
                         <span className="font-bold text-zinc-100 text-sm">{env.name}</span>
+
                         {isOverBudget ? (
                           <span className="px-2 py-0.5 rounded text-[10px] font-extrabold uppercase bg-rose-500/20 text-rose-300 border border-rose-500/30">
                             Estourado (+{formatBRL(Math.abs(remaining))})
@@ -621,7 +665,7 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
                                 })
                               }
                               className="p-1.5 rounded-lg text-zinc-300 hover:text-white bg-zinc-900 border border-zinc-800 hover:border-zinc-700 transition"
-                              title="Editar nome ou teto do envelope"
+                              title="Editar nome da categoria"
                             >
                               <Edit2 className="w-3.5 h-3.5" />
                             </button>
@@ -643,37 +687,12 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
                       </div>
 
                       <div className="flex items-center gap-3 text-xs">
-                        {editingEnvelopeId === env.id && !isClosed ? (
-                          <div className="flex items-center gap-1">
-                            <input
-                              type="number"
-                              value={newTargetValue}
-                              onChange={(e) => setNewTargetValue(e.target.value)}
-                              className="w-24 px-2 py-1 rounded bg-zinc-900 border border-zinc-700 text-xs font-mono-numbers text-white outline-none"
-                            />
-                            <button
-                              onClick={() => handleSaveTarget(env.id)}
-                              className="px-2 py-1 rounded bg-emerald-500 text-zinc-950 text-xs font-bold"
-                            >
-                              Salvar
-                            </button>
-                            <button
-                              onClick={() => setEditingEnvelopeId(null)}
-                              className="px-1.5 py-1 text-zinc-400 hover:text-white text-xs"
-                            >
-                              ✕
-                            </button>
-                          </div>
-                        ) : (
-                          <button
-                            disabled={isClosed}
-                            onClick={() => startEditTarget(env.id, target)}
-                            className={`text-zinc-400 hover:text-zinc-200 underline decoration-dashed text-[11px] ${isClosed ? 'cursor-not-allowed' : ''}`}
-                            title={isClosed ? 'Mês bloqueado' : 'Clique para editar a previsão orçada'}
-                          >
-                            Previsão (Teto): <span className="font-mono-numbers font-semibold text-zinc-200">{formatBRL(target)}</span>
-                          </button>
-                        )}
+                        <span className="text-[11px] text-zinc-400 font-mono-numbers">
+                          Teto Orçado: <strong className="text-emerald-400 font-bold">{formatBRL(target)}</strong>
+                          {env.subItems && env.subItems.length > 0 && (
+                            <span className="text-[10px] text-zinc-500 block">({env.subItems.length} subitem/ns somados)</span>
+                          )}
+                        </span>
 
                         {!isClosed && (
                           <button
@@ -690,17 +709,22 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
                     {/* Progress Bar & Realized Numbers */}
                     <div>
                       <div className="flex justify-between text-xs text-zinc-400 mb-1.5 font-mono-numbers">
-                        <span>
-                          Gasto Real: <strong className="text-zinc-100 font-bold">{formatBRL(totalSpent)}</strong>
+                        <span className="flex items-center gap-2">
+                          <span>Gasto Real: <strong className="text-zinc-100 font-bold">{formatBRL(totalSpent)}</strong></span>
+                          {cardTotalForEnv > 0 && (
+                            <span className="px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 text-[10px] font-semibold border border-indigo-500/30">
+                              💳 {formatBRL(cardTotalForEnv)} no Cartão
+                            </span>
+                          )}
                         </span>
                         <span>
                           {isOverBudget ? (
                             <span className="text-rose-400 font-bold">
-                              Substitui na Matriz: {formatBRL(totalSpent)} (Estouro: +{formatBRL(Math.abs(remaining))})
+                              Estouro: +{formatBRL(Math.abs(remaining))}
                             </span>
                           ) : (
                             <span className="text-emerald-400 font-medium">
-                              Mantém Previsão na Matriz: {formatBRL(target)} (Margem: {formatBRL(remaining)})
+                              Margem Restante: {formatBRL(remaining)}
                             </span>
                           )}
                         </span>
@@ -714,73 +738,169 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
                       </div>
                     </div>
 
-                    {/* Lançamentos do Mês Discriminados em Detalhe */}
-                    <div className="pt-2 border-t border-zinc-900 space-y-1.5">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-semibold text-zinc-400 block">
-                          Lançamentos Discriminados ({logs.length}):
-                        </span>
-                        {logs.length > 0 && (
-                          <span className="text-[10px] text-zinc-400 font-mono-numbers">
-                            Soma: {formatBRL(totalSpent)}
-                          </span>
-                        )}
-                      </div>
+                    {/* If NOT minimized, display Subcategories and Detailed Expense Logs */}
+                    {!isMinimized && (
+                      <div className="space-y-3 pt-2 border-t border-zinc-900">
+                        {/* Subcategorias / Itens do Teto Orçado */}
+                        <div className="space-y-2 bg-zinc-900/40 p-3 rounded-xl border border-zinc-800/60">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-bold text-emerald-400 block uppercase tracking-wider">
+                              Subcategorias / Itens da Categoria ({env.subItems?.length || 0}):
+                            </span>
+                            {env.subItems && env.subItems.length > 0 && (
+                              <span className="text-[11px] font-mono-numbers text-emerald-300 font-bold">
+                                Soma Teto = {formatBRL(subItemsSum)}
+                              </span>
+                            )}
+                          </div>
 
-                      {logs.length === 0 ? (
-                        <p className="text-[11px] text-zinc-400 italic py-1">
-                          Nenhum gasto lançado nesta categoria em {current.label}.
-                        </p>
-                      ) : (
-                        <div className="max-h-36 overflow-y-auto space-y-1 pr-1">
-                          {logs.map((log) => (
-                            <div
-                              key={log.id}
-                              className="flex items-center justify-between text-xs py-1.5 px-2.5 rounded bg-zinc-900/60 hover:bg-zinc-900 text-zinc-300 transition"
-                            >
-                              <div className="truncate mr-2">
-                                <span className="font-medium text-zinc-200 truncate">{log.description}</span>
-                                <span className="text-[10px] text-zinc-400 ml-2">
-                                  {log.date ? log.date.split('-').reverse().join('/') : ''}
-                                </span>
-                              </div>
-
-                              <div className="flex items-center gap-2 shrink-0">
-                                <span className="font-mono-numbers font-semibold text-zinc-100">
-                                  {formatBRL(log.amount)}
-                                </span>
-
-                                {!isClosed && (
-                                  <div className="flex items-center gap-1 border-l border-zinc-800 pl-1.5">
-                                    <button
-                                      onClick={() => setEditingLog(log)}
-                                      className="text-zinc-400 hover:text-white p-1 transition"
-                                      title="Editar este lançamento"
-                                    >
-                                      <Edit2 className="w-3.5 h-3.5" />
-                                    </button>
-                                    <button
-                                      onClick={() => {
-                                        setDeleteConfirm({
-                                          title: 'Remover Lançamento de Gasto Real',
-                                          message: `Deseja realmente remover o lançamento "${log.description}" no valor de ${formatBRL(log.amount)}?`,
-                                          onConfirm: () => deleteVariableExpenseLog(log.id),
-                                        });
-                                      }}
-                                      className="text-zinc-400 hover:text-rose-400 p-1 transition"
-                                      title="Remover lançamento"
-                                    >
-                                      <Trash2 className="w-3.5 h-3.5" />
-                                    </button>
+                          {(!env.subItems || env.subItems.length === 0) ? (
+                            <p className="text-[11px] text-zinc-500 italic">
+                              Nenhum item inserido nesta categoria. Adicione subcategorias abaixo (ex: Escola dos Filhos, Faculdade) para formar o teto de gastos automaticamente.
+                            </p>
+                          ) : (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              {env.subItems.map((sub) => (
+                                <div key={sub.id} className="flex items-center justify-between text-xs py-1.5 px-3 rounded-lg bg-zinc-950 border border-zinc-800 text-zinc-200">
+                                  <span className="font-medium truncate mr-2">{sub.name}</span>
+                                  <div className="flex items-center gap-2 shrink-0 font-mono-numbers font-semibold text-emerald-400">
+                                    <span>{formatBRL(sub.amount)}</span>
+                                    {!isClosed && (
+                                      <button
+                                        onClick={() => deleteBudgetSubItem(env.id, sub.id)}
+                                        className="text-zinc-500 hover:text-rose-400 p-1 transition"
+                                        title="Excluir subcategoria"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    )}
                                   </div>
-                                )}
-                              </div>
+                                </div>
+                              ))}
                             </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
+                          )}
 
+                          {/* Form to add new subcategory item */}
+                          {!isClosed && (
+                            <form
+                              onSubmit={(e) => {
+                                e.preventDefault();
+                                const input = subItemInputs[env.id] || { name: '', amount: '' };
+                                const amt = parseFloat(input.amount);
+                                if (!input.name.trim() || isNaN(amt) || amt <= 0) return;
+                                addBudgetSubItem(env.id, input.name.trim(), amt);
+                                setSubItemInputs({ ...subItemInputs, [env.id]: { name: '', amount: '' } });
+                              }}
+                              className="flex flex-col sm:flex-row items-center gap-2 pt-2 border-t border-zinc-800/60"
+                            >
+                              <input
+                                type="text"
+                                placeholder="Nome do item (ex: Escola dos Filhos, Faculdade)..."
+                                value={subItemInputs[env.id]?.name || ''}
+                                onChange={(e) => setSubItemInputs({ ...subItemInputs, [env.id]: { ...(subItemInputs[env.id] || { amount: '' }), name: e.target.value } })}
+                                className="flex-1 w-full px-2.5 py-1.5 rounded-lg bg-zinc-950 border border-zinc-700 text-xs text-white placeholder-zinc-500 outline-none focus:border-emerald-500"
+                              />
+                              <input
+                                type="number"
+                                step="0.01"
+                                placeholder="Valor Teto (R$)"
+                                value={subItemInputs[env.id]?.amount || ''}
+                                onChange={(e) => setSubItemInputs({ ...subItemInputs, [env.id]: { ...(subItemInputs[env.id] || { name: '' }), amount: e.target.value } })}
+                                className="w-full sm:w-28 px-2.5 py-1.5 rounded-lg bg-zinc-950 border border-zinc-700 text-xs text-white font-mono-numbers outline-none focus:border-emerald-500"
+                              />
+                              <button
+                                type="submit"
+                                className="w-full sm:w-auto px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-bold text-xs transition shrink-0"
+                              >
+                                + Adicionar Item
+                              </button>
+                            </form>
+                          )}
+                        </div>
+
+                        {/* Lançamentos do Mês Discriminados em Detalhe */}
+                        <div className="space-y-1.5 pt-1">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-semibold text-zinc-400 block">
+                              Lançamentos do Mês ({logs.length + cardTxForEnv.length}):
+                            </span>
+                            <span className="text-[10px] text-zinc-400 font-mono-numbers">
+                              Soma Real: {formatBRL(totalSpent)}
+                            </span>
+                          </div>
+
+                          {logs.length === 0 && cardTxForEnv.length === 0 ? (
+                            <p className="text-[11px] text-zinc-500 italic py-1">
+                              Nenhum gasto registrado nesta categoria em {current.label}.
+                            </p>
+                          ) : (
+                            <div className="max-h-40 overflow-y-auto space-y-1 pr-1">
+                              {/* Display Card Transactions for this category */}
+                              {cardTxForEnv.map((tx) => (
+                                <div
+                                  key={`card-tx-${tx.id}`}
+                                  className="flex items-center justify-between text-xs py-1.5 px-2.5 rounded bg-indigo-950/30 border border-indigo-500/20 text-indigo-200"
+                                >
+                                  <div className="truncate mr-2 flex items-center gap-1.5">
+                                    <span className="px-1.5 py-0.5 rounded bg-indigo-500/30 text-[9px] font-bold text-indigo-200">CARTÃO</span>
+                                    <span className="font-medium truncate">{tx.description}</span>
+                                  </div>
+                                  <span className="font-mono-numbers font-semibold text-indigo-300">
+                                    {formatBRL(tx.installmentAmount)}
+                                  </span>
+                                </div>
+                              ))}
+
+                              {/* Display Variable Expense Logs */}
+                              {logs.map((log) => (
+                                <div
+                                  key={log.id}
+                                  className="flex items-center justify-between text-xs py-1.5 px-2.5 rounded bg-zinc-900/60 hover:bg-zinc-900 text-zinc-300 transition"
+                                >
+                                  <div className="truncate mr-2">
+                                    <span className="font-medium text-zinc-200 truncate">{log.description}</span>
+                                    <span className="text-[10px] text-zinc-400 ml-2">
+                                      {log.date ? log.date.split('-').reverse().join('/') : ''}
+                                    </span>
+                                  </div>
+
+                                  <div className="flex items-center gap-2 shrink-0">
+                                    <span className="font-mono-numbers font-semibold text-zinc-100">
+                                      {formatBRL(log.amount)}
+                                    </span>
+
+                                    {!isClosed && (
+                                      <div className="flex items-center gap-1 border-l border-zinc-800 pl-1.5">
+                                        <button
+                                          onClick={() => setEditingLog(log)}
+                                          className="text-zinc-400 hover:text-white p-1 transition"
+                                          title="Editar este lançamento"
+                                        >
+                                          <Edit2 className="w-3.5 h-3.5" />
+                                        </button>
+                                        <button
+                                          onClick={() => {
+                                            setDeleteConfirm({
+                                              title: 'Remover Lançamento de Gasto Real',
+                                              message: `Deseja realmente remover o lançamento "${log.description}" no valor de ${formatBRL(log.amount)}?`,
+                                              onConfirm: () => deleteVariableExpenseLog(log.id),
+                                            });
+                                          }}
+                                          className="text-zinc-400 hover:text-rose-400 p-1 transition"
+                                          title="Remover lançamento"
+                                        >
+                                          <Trash2 className="w-3.5 h-3.5" />
+                                        </button>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 );
               })}

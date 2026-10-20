@@ -13,6 +13,8 @@ import {
   TrendingDown,
   Info,
   Clock,
+  X,
+  Check,
 } from 'lucide-react';
 import { useFinance } from '../../context/FinanceContext';
 import {
@@ -22,6 +24,7 @@ import {
   addMonths,
   getMonthLabel,
 } from '../../utils/calculations';
+import { CardTransaction } from '../../types/finance';
 
 interface CardsTabProps {
   onOpenNewTransaction: () => void;
@@ -41,6 +44,7 @@ export const CardsTab: React.FC<CardsTabProps> = ({
     currentMonthSummary,
     toggleCardTransactionReview,
     deleteCardTransaction,
+    updateCardTransaction,
     setCardRealInvoice,
   } = useFinance();
 
@@ -50,6 +54,14 @@ export const CardsTab: React.FC<CardsTabProps> = ({
   const [filterType, setFilterType] = useState<
     'ALL' | 'INSTALLMENT' | 'RECURRING' | 'REVIEW'
   >('ALL');
+
+  // Modal para editar lançamento
+  const [editingTx, setEditingTx] = useState<CardTransaction | null>(null);
+  const [editDescription, setEditDescription] = useState('');
+  const [editAmount, setEditAmount] = useState('');
+  const [editCategory, setEditCategory] = useState('');
+  const [editType, setEditType] = useState<'recurring' | 'installment' | 'single'>('installment');
+  const [editRemainingInstallments, setEditRemainingInstallments] = useState('1');
 
   const current = currentMonthSummary || summaries[0];
   const activeCard =
@@ -64,12 +76,26 @@ export const CardsTab: React.FC<CardsTabProps> = ({
   }
 
   // All transactions for active card
-  const cardTransactions = data.cardTransactions.filter(
+  const allCardTransactions = data.cardTransactions.filter(
     (tx) => tx.cardId === activeCard.id
   );
 
+  // Exibir apenas os lançamentos que incidem na fatura do mês selecionado
+  const monthTransactions = allCardTransactions.filter((tx) => {
+    if (tx.isPaused) return false;
+    if (tx.type === 'recurring') {
+      return getMonthDiff(tx.startMonth, selectedMonth) >= 0;
+    } else if (tx.type === 'installment') {
+      const inst = getInstallmentInfo(tx.startMonth, tx.totalInstallments, selectedMonth);
+      return inst.isActive;
+    } else if (tx.type === 'single') {
+      return tx.startMonth === selectedMonth;
+    }
+    return false;
+  });
+
   // Filter transactions
-  const filteredTransactions = cardTransactions.filter((tx) => {
+  const filteredTransactions = monthTransactions.filter((tx) => {
     if (filterType === 'INSTALLMENT') return tx.type === 'installment';
     if (filterType === 'RECURRING') return tx.type === 'recurring';
     if (filterType === 'REVIEW') return tx.needsReview;
@@ -81,25 +107,12 @@ export const CardsTab: React.FC<CardsTabProps> = ({
   let recurringSum = 0;
   let installmentSum = 0;
 
-  cardTransactions.forEach((tx) => {
-    if (tx.isPaused) return;
-
+  monthTransactions.forEach((tx) => {
+    detailedSumThisMonth += tx.installmentAmount;
     if (tx.type === 'recurring') {
-      if (getMonthDiff(tx.startMonth, selectedMonth) >= 0) {
-        detailedSumThisMonth += tx.installmentAmount;
-        recurringSum += tx.installmentAmount;
-      }
-    } else if (tx.type === 'installment') {
-      const inst = getInstallmentInfo(tx.startMonth, tx.totalInstallments, selectedMonth);
-      if (inst.isActive) {
-        detailedSumThisMonth += tx.installmentAmount;
-        installmentSum += tx.installmentAmount;
-      }
-    } else if (tx.type === 'single') {
-      if (tx.startMonth === selectedMonth) {
-        detailedSumThisMonth += tx.installmentAmount;
-        installmentSum += tx.installmentAmount;
-      }
+      recurringSum += tx.installmentAmount;
+    } else {
+      installmentSum += tx.installmentAmount;
     }
   });
 
@@ -109,6 +122,77 @@ export const CardsTab: React.FC<CardsTabProps> = ({
       ? realInvoice - detailedSumThisMonth
       : 0;
   const effectiveInvoiceTotal = Math.max(detailedSumThisMonth, realInvoice || 0);
+
+  // Abrir Modal de Edição
+  const handleOpenEdit = (tx: CardTransaction) => {
+    setEditingTx(tx);
+    setEditDescription(tx.description);
+    setEditAmount(String(tx.installmentAmount));
+    setEditCategory(tx.category || 'Outros');
+    setEditType(tx.type);
+
+    if (tx.type === 'installment') {
+      const instInfo = getInstallmentInfo(tx.startMonth, tx.totalInstallments, selectedMonth);
+      const remaining = instInfo.isActive
+        ? Math.max(1, tx.totalInstallments - instInfo.current + 1)
+        : tx.totalInstallments;
+      setEditRemainingInstallments(String(remaining));
+    } else {
+      setEditRemainingInstallments('1');
+    }
+  };
+
+  // Salvar Edição
+  const handleSaveEdit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingTx) return;
+
+    const parsedAmount = parseFloat(editAmount);
+    if (!editDescription.trim() || isNaN(parsedAmount) || parsedAmount <= 0) return;
+
+    let updatedStartMonth = editingTx.startMonth;
+    let updatedTotalInstallments = editingTx.totalInstallments;
+
+    if (editType === 'single') {
+      updatedStartMonth = selectedMonth;
+      updatedTotalInstallments = 1;
+    } else if (editType === 'recurring') {
+      updatedTotalInstallments = 1;
+    } else if (editType === 'installment') {
+      const remaining = parseInt(editRemainingInstallments, 10) || 1;
+      // Define a partir do mês selecionado a quantidade de parcelas restantes
+      updatedStartMonth = selectedMonth;
+      updatedTotalInstallments = remaining;
+    }
+
+    const updatedTx: CardTransaction = {
+      ...editingTx,
+      description: editDescription.trim(),
+      installmentAmount: parsedAmount,
+      category: editCategory,
+      type: editType,
+      startMonth: updatedStartMonth,
+      totalInstallments: updatedTotalInstallments,
+    };
+
+    updateCardTransaction(updatedTx);
+    setEditingTx(null);
+  };
+
+  // Lista de Categorias / Envelopes disponíveis
+  const availableCategories = Array.from(
+    new Set([
+      'Supermercado/Feira',
+      'Alimentação / iFood',
+      'Transporte / Combustível',
+      'Farmácia / Saúde',
+      'Lazer / Assinaturas',
+      'Eletrônicos',
+      'Vestuário',
+      'Outros',
+      ...data.budgetEnvelopes.map((e) => e.name),
+    ])
+  );
 
   return (
     <div className="space-y-6 pb-12">
@@ -144,70 +228,43 @@ export const CardsTab: React.FC<CardsTabProps> = ({
           className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-zinc-900 hover:bg-zinc-800 text-emerald-400 border border-emerald-500/30 transition shrink-0 ml-auto"
         >
           <Upload className="w-3.5 h-3.5" />
-          <span>Importar CSV</span>
+          <span>Importar Fatura CSV</span>
         </button>
       </div>
 
-      {/* Active Card Executive Banner */}
-      <div className="p-5 rounded-2xl bg-zinc-900/90 border border-zinc-800/80 shadow-sm relative overflow-hidden">
-        <div
-          className="absolute -top-12 -right-12 w-64 h-64 rounded-full blur-3xl opacity-10 pointer-events-none"
-          style={{ backgroundColor: activeCard.color }}
-        />
-
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 relative z-10">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span
-                className="w-3 h-3 rounded-full"
-                style={{ backgroundColor: activeCard.color }}
-              />
-              <h2 className="text-xl font-extrabold text-white tracking-tight">
-                {activeCard.name}
-              </h2>
-              <span className="text-[10px] px-2 py-0.5 rounded bg-zinc-800 text-zinc-300 font-bold uppercase">
-                {activeCard.scope}
-              </span>
+      {/* Active Card Invoice Summary Banner */}
+      <div className="p-5 rounded-2xl bg-zinc-900/90 border border-zinc-800 shadow-md">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          {/* Card Info */}
+          <div className="flex items-center gap-3">
+            <div
+              className="w-12 h-12 rounded-xl flex items-center justify-center text-white shadow-lg"
+              style={{ backgroundColor: activeCard.color }}
+            >
+              <CreditCardIcon className="w-6 h-6" />
             </div>
-
-            <p className="text-xs text-zinc-400 flex items-center gap-3 flex-wrap">
-              <span>Vencimento: Dia <strong>{activeCard.dueDay}</strong></span>
-              <span>•</span>
-              <span>Fechamento: Dia <strong>{activeCard.closingDay}</strong></span>
-              <span>•</span>
-              <span>Banco: <strong>{activeCard.bank}</strong></span>
-              {activeCard.lastConsolidatedAt?.[selectedMonth] && (
-                <>
-                  <span>•</span>
-                  <span className="text-emerald-400 font-medium">
-                    Consolidado em: {new Date(activeCard.lastConsolidatedAt[selectedMonth]).toLocaleDateString('pt-BR')} às {new Date(activeCard.lastConsolidatedAt[selectedMonth]).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
-                  </span>
-                </>
-              )}
-            </p>
+            <div>
+              <h2 className="text-base font-bold text-white flex items-center gap-2">
+                <span>{activeCard.name}</span>
+                <span className="text-xs font-semibold px-2 py-0.5 rounded bg-zinc-800 text-zinc-300">
+                  {activeCard.scope}
+                </span>
+              </h2>
+              <p className="text-xs text-zinc-400">
+                Fatura de <strong>{current.label} ({selectedMonth})</strong> • Fechamento: Dia {activeCard.closingDay} | Vencimento: Dia {activeCard.dueDay}
+              </p>
+            </div>
           </div>
 
-          {/* Invoice Reconciliation Cards */}
+          {/* Totals & Real Invoice Adjustment */}
           <div className="flex flex-wrap items-center gap-3">
             {/* Detailed Sum */}
             <div className="px-3.5 py-2 rounded-xl bg-zinc-950 border border-zinc-800 text-xs">
-              <span className="text-zinc-400 block text-[11px]">Soma dos Itens:</span>
-              <span className="font-mono-numbers font-bold text-zinc-200 text-sm">
+              <span className="text-zinc-400 block text-[11px]">Soma Lançamentos no Mês:</span>
+              <span className="font-mono-numbers font-bold text-white text-sm">
                 {formatBRL(detailedSumThisMonth)}
               </span>
             </div>
-
-            {/* Unmapped Diff */}
-            {unmappedDiff > 0 && (
-              <div className="px-3.5 py-2 rounded-xl bg-amber-950/20 border border-amber-500/30 text-xs">
-                <span className="text-amber-400 block text-[11px] font-semibold">
-                  Diferença Não Mapeada:
-                </span>
-                <span className="font-mono-numbers font-bold text-amber-300 text-sm">
-                  +{formatBRL(unmappedDiff)}
-                </span>
-              </div>
-            )}
 
             {/* Effective Invoice Total */}
             <div className="px-4 py-2 rounded-xl bg-zinc-950 border border-emerald-500/30 text-xs shadow-sm">
@@ -283,7 +340,7 @@ export const CardsTab: React.FC<CardsTabProps> = ({
                 : 'text-zinc-400 hover:text-zinc-200'
             }`}
           >
-            Todos ({cardTransactions.length})
+            Fatura {current.label} ({monthTransactions.length})
           </button>
           <button
             onClick={() => setFilterType('INSTALLMENT')}
@@ -293,7 +350,7 @@ export const CardsTab: React.FC<CardsTabProps> = ({
                 : 'text-zinc-400 hover:text-zinc-200'
             }`}
           >
-            Parcelamentos ({cardTransactions.filter((t) => t.type === 'installment').length})
+            Parcelamentos ({monthTransactions.filter((t) => t.type === 'installment').length})
           </button>
           <button
             onClick={() => setFilterType('RECURRING')}
@@ -303,7 +360,7 @@ export const CardsTab: React.FC<CardsTabProps> = ({
                 : 'text-zinc-400 hover:text-zinc-200'
             }`}
           >
-            Assinaturas Fixas ({cardTransactions.filter((t) => t.type === 'recurring').length})
+            Assinaturas Fixas ({monthTransactions.filter((t) => t.type === 'recurring').length})
           </button>
           <button
             onClick={() => setFilterType('REVIEW')}
@@ -313,7 +370,7 @@ export const CardsTab: React.FC<CardsTabProps> = ({
                 : 'text-zinc-400 hover:text-zinc-200'
             }`}
           >
-            ⚠️ Verificar ({cardTransactions.filter((t) => t.needsReview).length})
+            ⚠️ Verificar ({monthTransactions.filter((t) => t.needsReview).length})
           </button>
         </div>
 
@@ -330,7 +387,7 @@ export const CardsTab: React.FC<CardsTabProps> = ({
       <div className="space-y-3">
         {filteredTransactions.length === 0 ? (
           <div className="p-8 text-center text-xs text-zinc-400 rounded-2xl bg-zinc-900/40 border border-zinc-800">
-            Nenhuma transação encontrada para este filtro no cartão selecionado.
+            Nenhum lançamento encontrado na fatura de <strong>{current.label} ({selectedMonth})</strong> para este filtro.
           </div>
         ) : (
           filteredTransactions.map((tx) => {
@@ -345,7 +402,7 @@ export const CardsTab: React.FC<CardsTabProps> = ({
               ? addMonths(tx.startMonth, tx.totalInstallments - 1)
               : null;
 
-            // Remaining balance for installment
+            // Remaining balance for installment starting from selected month
             const remainingInstallments = instInfo
               ? Math.max(0, tx.totalInstallments - instInfo.current + 1)
               : 0;
@@ -406,7 +463,7 @@ export const CardsTab: React.FC<CardsTabProps> = ({
                   </div>
 
                   <div className="text-xs text-zinc-400 flex flex-wrap items-center gap-3">
-                    <span>Categoria: {tx.category}</span>
+                    <span>Categoria: <strong className="text-zinc-200">{tx.category}</strong></span>
                     {endMonth && (
                       <>
                         <span>•</span>
@@ -425,7 +482,7 @@ export const CardsTab: React.FC<CardsTabProps> = ({
                   {isInstallment && instInfo && (
                     <div className="max-w-md pt-1">
                       <div className="flex justify-between text-[10px] text-zinc-400 mb-1 font-mono-numbers">
-                        <span>Progresso: {instInfo.current}/{instInfo.total}</span>
+                        <span>Progresso: Parcela {instInfo.current} de {instInfo.total} ({remainingInstallments} restante/s)</span>
                         <span>Saldo Restante: {formatBRL(remainingBalance)}</span>
                       </div>
                       <div className="w-full bg-zinc-800 h-1.5 rounded-full overflow-hidden">
@@ -457,6 +514,15 @@ export const CardsTab: React.FC<CardsTabProps> = ({
                   </div>
 
                   <div className="flex items-center gap-1.5">
+                    {/* Botão de Edição */}
+                    <button
+                      onClick={() => handleOpenEdit(tx)}
+                      className="p-2 rounded-lg text-xs bg-zinc-800/80 hover:bg-zinc-700 text-zinc-300 hover:text-white border border-zinc-700/60 transition"
+                      title="Editar este lançamento"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                    </button>
+
                     <button
                       onClick={() => toggleCardTransactionReview(tx.id)}
                       className={`p-2 rounded-lg text-xs transition border ${
@@ -484,6 +550,117 @@ export const CardsTab: React.FC<CardsTabProps> = ({
           })
         )}
       </div>
+
+      {/* Modal de Edição de Lançamento do Cartão */}
+      {editingTx && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="w-full max-w-md rounded-2xl bg-zinc-950 border border-zinc-800 shadow-2xl overflow-hidden">
+            <div className="flex items-center justify-between p-4 border-b border-zinc-800 bg-zinc-900/60">
+              <div className="flex items-center gap-2">
+                <Edit2 className="w-4 h-4 text-emerald-400" />
+                <h3 className="text-sm font-bold text-white">Editar Lançamento do Cartão</h3>
+              </div>
+              <button
+                onClick={() => setEditingTx(null)}
+                className="p-1 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEdit} className="p-5 space-y-4 text-xs">
+              <div className="space-y-1">
+                <label className="font-semibold text-zinc-300">Descrição / Título da Compra</label>
+                <input
+                  type="text"
+                  required
+                  value={editDescription}
+                  onChange={(e) => setEditDescription(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-700 text-white outline-none focus:border-emerald-500 font-medium"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="font-semibold text-zinc-300">Valor Parcela / Mês (R$)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    required
+                    value={editAmount}
+                    onChange={(e) => setEditAmount(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-700 text-white font-mono-numbers outline-none focus:border-emerald-500 font-bold"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="font-semibold text-zinc-300">Categoria</label>
+                  <select
+                    value={editCategory}
+                    onChange={(e) => setEditCategory(e.target.value)}
+                    className="w-full px-2.5 py-2 rounded-lg bg-zinc-900 border border-zinc-700 text-white outline-none focus:border-emerald-500 font-medium"
+                  >
+                    {availableCategories.map((cat) => (
+                      <option key={cat} value={cat}>
+                        {cat}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="font-semibold text-zinc-300">Tipo de Compra</label>
+                <select
+                  value={editType}
+                  onChange={(e) => setEditType(e.target.value as any)}
+                  className="w-full px-2.5 py-2 rounded-lg bg-zinc-900 border border-zinc-700 text-white outline-none focus:border-emerald-500 font-medium"
+                >
+                  <option value="single">Compra Única (Mês Atual)</option>
+                  <option value="installment">Parcelada (Várias Vezes)</option>
+                  <option value="recurring">Assinatura Mensal Recorrente</option>
+                </select>
+              </div>
+
+              {editType === 'installment' && (
+                <div className="space-y-1 p-3 rounded-xl bg-indigo-950/30 border border-indigo-500/30">
+                  <label className="font-semibold text-indigo-200 block">
+                    Quantas parcelas restam a partir de {selectedMonth}?
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="120"
+                    required
+                    value={editRemainingInstallments}
+                    onChange={(e) => setEditRemainingInstallments(e.target.value)}
+                    className="w-full px-3 py-1.5 rounded-lg bg-zinc-900 border border-indigo-500/50 text-white font-mono-numbers outline-none focus:border-indigo-400 font-bold"
+                  />
+                  <p className="text-[10px] text-indigo-300/80">
+                    O sistema reajustará o plano do parcelamento para durar exatamente {editRemainingInstallments} parcelas a partir da fatura de {selectedMonth}.
+                  </p>
+                </div>
+              )}
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-zinc-800">
+                <button
+                  type="button"
+                  onClick={() => setEditingTx(null)}
+                  className="px-3.5 py-2 rounded-lg text-zinc-400 hover:text-white"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-lg font-bold bg-emerald-500 hover:bg-emerald-400 text-zinc-950 transition shadow-md shadow-emerald-500/20"
+                >
+                  Salvar Alterações
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
     </div>
   );

@@ -79,6 +79,9 @@ interface FinanceContextType {
   updateBudgetEnvelopeTarget: (envelopeId: string, newTarget: number) => void;
   updateBudgetEnvelope: (envelopeId: string, name: string, targetAmount: number) => void;
   deleteBudgetEnvelope: (envelopeId: string) => void;
+  addBudgetSubItem: (categoryId: string, name: string, amount: number) => void;
+  updateBudgetSubItem: (categoryId: string, subItemId: string, name: string, amount: number) => void;
+  deleteBudgetSubItem: (categoryId: string, subItemId: string) => void;
 
   addOrIncrementExpense: (params: {
     title: string;
@@ -547,6 +550,67 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         env.id === envelopeId ? { ...env, targetAmount: newTarget } : env
       );
       persistLocally({ ...data, budgetEnvelopes: updated });
+    },
+    [data, persistLocally]
+  );
+
+  const addBudgetSubItem = useCallback(
+    (categoryId: string, name: string, amount: number) => {
+      const updatedEnvelopes = data.budgetEnvelopes.map((env) => {
+        if (env.id === categoryId) {
+          const subItems = env.subItems || [];
+          const newItem = { id: `sub_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`, name, amount };
+          const newSubItems = [...subItems, newItem];
+          const totalTarget = newSubItems.reduce((acc, curr) => acc + curr.amount, 0);
+          return {
+            ...env,
+            subItems: newSubItems,
+            targetAmount: totalTarget,
+          };
+        }
+        return env;
+      });
+      persistLocally({ ...data, budgetEnvelopes: updatedEnvelopes });
+    },
+    [data, persistLocally]
+  );
+
+  const updateBudgetSubItem = useCallback(
+    (categoryId: string, subItemId: string, name: string, amount: number) => {
+      const updatedEnvelopes = data.budgetEnvelopes.map((env) => {
+        if (env.id === categoryId) {
+          const subItems = env.subItems || [];
+          const newSubItems = subItems.map((s) => s.id === subItemId ? { ...s, name, amount } : s);
+          const totalTarget = newSubItems.reduce((acc, curr) => acc + curr.amount, 0);
+          return {
+            ...env,
+            subItems: newSubItems,
+            targetAmount: totalTarget,
+          };
+        }
+        return env;
+      });
+      persistLocally({ ...data, budgetEnvelopes: updatedEnvelopes });
+    },
+    [data, persistLocally]
+  );
+
+  const deleteBudgetSubItem = useCallback(
+    (categoryId: string, subItemId: string) => {
+      const updatedEnvelopes = data.budgetEnvelopes.map((env) => {
+        if (env.id === categoryId) {
+          const subItems = env.subItems || [];
+          const newSubItems = subItems.filter((s) => s.id !== subItemId);
+          const totalTarget = newSubItems.length > 0 ? newSubItems.reduce((acc, curr) => acc + curr.amount, 0) : env.targetAmount;
+          return {
+            ...env,
+            subItems: newSubItems,
+            targetAmount: totalTarget,
+          };
+        }
+        return env;
+      });
+      persistLocally({ ...data, budgetEnvelopes: updatedEnvelopes });
     },
     [data, persistLocally]
   );
@@ -1091,6 +1155,9 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         updateBudgetEnvelopeTarget,
         updateBudgetEnvelope,
         deleteBudgetEnvelope,
+        addBudgetSubItem,
+        updateBudgetSubItem,
+        deleteBudgetSubItem,
         addOrIncrementExpense,
         isMonthClosed,
         closeMonth,

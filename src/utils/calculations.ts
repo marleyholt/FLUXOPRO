@@ -180,6 +180,34 @@ export function calculateForecast(
     const cardUnmappedDiffByCard: Record<string, number> = {};
     const cardItemsCountByCard: Record<string, number> = {};
 
+    // Calculate average consumption trend (diferença entre fatura real e lançamentos) por cartão
+    const cardConsumptionTrend: Record<string, number> = {};
+    data.creditCards.forEach((card) => {
+      const realInvoices = card.realInvoiceTotalByMonth || {};
+      const keys = Object.keys(realInvoices);
+      if (keys.length > 0) {
+        let diffSum = 0;
+        let count = 0;
+        keys.forEach((m) => {
+          const real = realInvoices[m];
+          let sumForM = 0;
+          data.cardTransactions.forEach((tx) => {
+            if (tx.cardId !== card.id || tx.isPaused) return;
+            if (tx.type === 'recurring' && getMonthDiff(tx.startMonth, m) >= 0) sumForM += tx.installmentAmount;
+            else if (tx.type === 'installment' && getInstallmentInfo(tx.startMonth, tx.totalInstallments, m).isActive) sumForM += tx.installmentAmount;
+            else if (tx.type === 'single' && tx.startMonth === m) sumForM += tx.installmentAmount;
+          });
+          if (real > sumForM) {
+            diffSum += (real - sumForM);
+            count++;
+          }
+        });
+        cardConsumptionTrend[card.id] = count > 0 ? Math.round(diffSum / count) : 0;
+      } else {
+        cardConsumptionTrend[card.id] = 0;
+      }
+    });
+
     data.creditCards.forEach((card) => {
       if (scopeFilter !== 'ALL' && card.scope !== scopeFilter) return;
 
@@ -215,9 +243,16 @@ export function calculateForecast(
       let unmappedDiff = 0;
       let effectiveCardTotal = cardDetailedSum;
 
-      if (realInvoice !== undefined && realInvoice > cardDetailedSum) {
-        unmappedDiff = realInvoice - cardDetailedSum;
-        effectiveCardTotal = realInvoice;
+      if (realInvoice !== undefined) {
+        if (realInvoice > cardDetailedSum) {
+          unmappedDiff = realInvoice - cardDetailedSum;
+        }
+        effectiveCardTotal = Math.max(realInvoice, cardDetailedSum);
+      } else {
+        // Projeta tendência de compras correntes para meses futuros
+        const projectedTrend = cardConsumptionTrend[card.id] || 0;
+        effectiveCardTotal = cardDetailedSum + projectedTrend;
+        unmappedDiff = projectedTrend;
       }
 
       cardTotalsByCard[card.id] = effectiveCardTotal;
