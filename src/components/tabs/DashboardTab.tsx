@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   TrendingUp,
   TrendingDown,
@@ -16,6 +16,7 @@ import {
   Layers,
   Building2,
   User,
+  Calendar,
 } from 'lucide-react';
 import {
   ComposedChart,
@@ -60,7 +61,20 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
     currentMonthSummary,
     toggleCardTransactionReview,
     setActiveTab,
+    updateSettings,
   } = useFinance();
+
+  // Generate available months for rolling forecast start month selector
+  const availableMonths: { value: string; label: string }[] = [];
+  const baseDate = new Date();
+  baseDate.setMonth(baseDate.getMonth() - 12);
+  for (let i = 0; i < 48; i++) {
+    const y = baseDate.getFullYear();
+    const m = String(baseDate.getMonth() + 1).padStart(2, '0');
+    const val = `${y}-${m}`;
+    availableMonths.push({ value: val, label: getMonthLabel(val) });
+    baseDate.setMonth(baseDate.getMonth() + 1);
+  }
 
   const current = currentMonthSummary || summaries[0];
   const milestone = findRecoveryMilestone(summaries);
@@ -278,6 +292,31 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
 
   return (
     <div className="space-y-6 pb-12">
+      {/* Rolling Forecast Start Month Selector Bar */}
+      <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-800 flex flex-col md:flex-row md:items-center justify-between gap-4 text-xs shadow-md">
+        <div className="flex items-center gap-2.5">
+          <Calendar className="w-4 h-4 text-emerald-400" />
+          <div>
+            <span className="font-bold text-white block">Início da Projeção de 12 Meses (Rolling Forecast)</span>
+            <span className="text-[11px] text-zinc-400">Define o mês de partida para observar e projetar os próximos 12 meses.</span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <select
+            value={data.settings.startMonth || '2026-01'}
+            onChange={(e) => updateSettings({ startMonth: e.target.value })}
+            className="px-3.5 py-2 rounded-lg bg-zinc-950 border border-zinc-700 text-white font-mono-numbers outline-none focus:border-emerald-500 font-bold"
+          >
+            {availableMonths.map((m) => (
+              <option key={m.value} value={m.value}>
+                {m.label} ({m.value})
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
       {/* Activity Tracker & Motivational Banner */}
       <div className="p-4 rounded-xl bg-zinc-900/60 border border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
         <div className="flex items-center gap-3">
