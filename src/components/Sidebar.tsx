@@ -248,16 +248,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
             {!isCollapsed && <span>Novo Lançamento</span>}
           </button>
 
-          {/* Import PDF / CSV */}
+          {/* Import CSV */}
           <button
             onClick={onOpenCsvImport}
-            className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold bg-zinc-900 hover:bg-zinc-800 text-emerald-400 border border-emerald-500/30 transition ${
+            className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-semibold bg-zinc-900 hover:bg-zinc-850 text-emerald-400 border border-emerald-500/30 transition shadow-sm ${
               isCollapsed ? 'justify-center px-0' : ''
             }`}
-            title="Importar Fatura em PDF ou CSV com IA"
+            title="Upload de faturas de cartão e extratos em CSV a qualquer momento para consolidar compras do dia"
           >
             <Upload className="w-4 h-4 shrink-0" />
-            {!isCollapsed && <span>Importar PDF / CSV</span>}
+            {!isCollapsed && (
+              <div className="flex items-center justify-between w-full">
+                <span>Importar CSV</span>
+                <span className="text-[10px] px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 font-bold">
+                  Faturas & Extratos
+                </span>
+              </div>
+            )}
           </button>
 
           {/* Cloud & Backup */}

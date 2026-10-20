@@ -143,46 +143,20 @@ function MainApp() {
             </div>
           </div>
 
-          {/* Quick Action Buttons */}
+          {/* Quick Action Buttons (Only Salvar no Firebase and Novo Lançamento) */}
           <div className="flex items-center gap-2">
-            
-            {/* Unsaved Changes / Firebase Sync Button */}
-            {hasUnsavedChanges ? (
-              <button
-                onClick={handleSyncToFirebase}
-                disabled={isSavingToFirebase}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-500 hover:bg-amber-400 text-zinc-950 transition shadow-md shadow-amber-500/20 ring-1 ring-amber-400 animate-pulse"
-                title="Alterações salvas no navegador. Clique aqui para gravar permanentemente no Firebase."
-              >
-                <CloudUpload className="w-3.5 h-3.5 stroke-[2.5]" />
-                <span>{isSavingToFirebase ? 'Gravando...' : 'Salvar no Firebase'}</span>
-              </button>
-            ) : (
-              <div
-                className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-zinc-900/80 border border-zinc-800 text-zinc-400 text-xs"
-                title="Tudo sincronizado na nuvem Firebase"
-              >
-                <Cloud className="w-3.5 h-3.5 text-emerald-400" />
-                <span className="text-[11px] text-zinc-300 font-medium">Nuvem OK</span>
-              </div>
-            )}
-
             <button
-              onClick={() => setIsChecklistModalOpen(true)}
-              className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-zinc-900 hover:bg-zinc-850 text-emerald-300 border border-emerald-500/30 transition shadow-sm"
-              title="Roteiro & Checklist Guiado"
+              onClick={handleSyncToFirebase}
+              disabled={isSavingToFirebase}
+              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition shadow-sm ${
+                hasUnsavedChanges
+                  ? 'bg-amber-500 hover:bg-amber-400 text-zinc-950 shadow-amber-500/20 ring-1 ring-amber-400 animate-pulse'
+                  : 'bg-zinc-900 hover:bg-zinc-800 text-emerald-400 border border-emerald-500/30'
+              }`}
+              title="Gravar dados no Firebase Firestore"
             >
-              <CheckSquare className="w-3.5 h-3.5" />
-              <span>Roteiro Guiado</span>
-            </button>
-
-            <button
-              onClick={() => setIsCsvModalOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-zinc-900 hover:bg-zinc-850 text-emerald-400 border border-emerald-500/30 transition shadow-sm"
-              title="Importar Fatura em PDF ou CSV com IA"
-            >
-              <Upload className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Importar PDF/CSV</span>
+              <CloudUpload className="w-3.5 h-3.5 stroke-[2.5]" />
+              <span>{isSavingToFirebase ? 'Gravando...' : hasUnsavedChanges ? 'Salvar no Firebase' : 'Salvo no Firebase'}</span>
             </button>
 
             <button
@@ -190,7 +164,7 @@ function MainApp() {
               className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold bg-emerald-500 hover:bg-emerald-400 text-zinc-950 transition shadow-md shadow-emerald-500/20"
             >
               <PlusCircle className="w-3.5 h-3.5 stroke-[2.5]" />
-              <span className="hidden sm:inline">Novo Lançamento</span>
+              <span>Novo Lançamento</span>
             </button>
           </div>
         </header>

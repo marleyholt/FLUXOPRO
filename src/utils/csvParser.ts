@@ -165,5 +165,6 @@ export function convertCsvItemToTransaction(
     category: item.category || 'Fatura Cartão',
     needsReview: item.needsReview,
     importedFromCsv: true,
+    transactionDate: item.date,
   };
 }

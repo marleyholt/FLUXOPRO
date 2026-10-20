@@ -50,13 +50,22 @@ export async function loadAppData(): Promise<{ data: AppData; isUsingFirebase: b
       const db = getFirestoreInstance(config);
       const docRef = doc(db, 'fluxo_caixa', 'main_workspace');
       const docSnap = await getDoc(docRef);
-
       if (docSnap.exists()) {
         const remoteData = docSnap.data() as AppData;
         const withVisit: AppData = {
+          ...INITIAL_SEED_DATA,
           ...remoteData,
+          creditCards:
+            remoteData.creditCards && remoteData.creditCards.length > 0
+              ? remoteData.creditCards
+              : INITIAL_SEED_DATA.creditCards,
+          bankAccounts:
+            remoteData.bankAccounts && remoteData.bankAccounts.length > 0
+              ? remoteData.bankAccounts
+              : INITIAL_SEED_DATA.bankAccounts,
           settings: {
-            ...remoteData.settings,
+            ...INITIAL_SEED_DATA.settings,
+            ...(remoteData.settings || {}),
             lastVisitTimestamp: new Date().toISOString(),
           },
         };

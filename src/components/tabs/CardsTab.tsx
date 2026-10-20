@@ -170,12 +170,20 @@ export const CardsTab: React.FC<CardsTabProps> = ({
               </span>
             </div>
 
-            <p className="text-xs text-zinc-400 flex items-center gap-3">
+            <p className="text-xs text-zinc-400 flex items-center gap-3 flex-wrap">
               <span>Vencimento: Dia <strong>{activeCard.dueDay}</strong></span>
               <span>•</span>
               <span>Fechamento: Dia <strong>{activeCard.closingDay}</strong></span>
               <span>•</span>
               <span>Banco: <strong>{activeCard.bank}</strong></span>
+              {activeCard.lastConsolidatedAt?.[selectedMonth] && (
+                <>
+                  <span>•</span>
+                  <span className="text-emerald-400 font-medium">
+                    Consolidado em: {new Date(activeCard.lastConsolidatedAt[selectedMonth]).toLocaleDateString('pt-BR')} às {new Date(activeCard.lastConsolidatedAt[selectedMonth]).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                </>
+              )}
             </p>
           </div>
 
@@ -355,6 +363,12 @@ export const CardsTab: React.FC<CardsTabProps> = ({
                     {tx.importedFromCsv && (
                       <span className="px-1.5 py-0.5 rounded text-[9px] bg-zinc-800 text-zinc-400">
                         CSV
+                      </span>
+                    )}
+
+                    {tx.transactionDate && (
+                      <span className="px-2 py-0.5 rounded text-[10px] font-mono-numbers bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                        {tx.transactionDate}
                       </span>
                     )}
                   </div>

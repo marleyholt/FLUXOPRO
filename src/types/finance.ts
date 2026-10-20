@@ -72,6 +72,7 @@ export interface CreditCard {
   parcelamentoRateMonthly?: number; // Taxa do parcelamento da fatura (% a.m. - ex: 4.2)
   realInvoiceTotalByMonth?: Record<string, number>; // key: YYYY-MM -> real bank total
   invoicePaymentDateByMonth?: Record<string, string>; // key: YYYY-MM -> YYYY-MM-DD data de vencimento/pagamento
+  lastConsolidatedAt?: Record<string, string>; // key: YYYY-MM -> ISO timestamp de consolidação da fatura
 }
 
 export interface CardTransaction {
@@ -88,6 +89,7 @@ export interface CardTransaction {
   notes?: string;
   isPaused?: boolean;
   importedFromCsv?: boolean;
+  transactionDate?: string; // Data exata da compra no cartão (ex: 2026-01-15)
 }
 
 export interface MonthSummary {
@@ -201,5 +203,6 @@ export interface CsvParsedItem {
   category?: string;
   selected: boolean;
   needsReview: boolean;
+  isAlreadyImported?: boolean;
 }
 

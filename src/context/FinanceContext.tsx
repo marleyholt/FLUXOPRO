@@ -871,29 +871,33 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       );
 
       let updatedCards = [...data.creditCards];
-      if (updateRealInvoice || paymentDate) {
-        const totalApproved = approvedItems.reduce((acc, curr) => acc + curr.amount, 0);
-        updatedCards = updatedCards.map((c) => {
-          if (c.id === cardId) {
-            const realMap = { ...(c.realInvoiceTotalByMonth || {}) };
-            const dateMap = { ...(c.invoicePaymentDateByMonth || {}) };
+      const nowIso = new Date().toISOString();
+      const totalApproved = approvedItems.reduce((acc, curr) => acc + curr.amount, 0);
 
-            if (updateRealInvoice) {
-              realMap[invoiceMonth] = totalApproved;
-            }
-            if (paymentDate) {
-              dateMap[invoiceMonth] = paymentDate;
-            }
+      updatedCards = updatedCards.map((c) => {
+        if (c.id === cardId) {
+          const realMap = { ...(c.realInvoiceTotalByMonth || {}) };
+          const dateMap = { ...(c.invoicePaymentDateByMonth || {}) };
+          const consolidatedMap = { ...(c.lastConsolidatedAt || {}) };
 
-            return {
-              ...c,
-              realInvoiceTotalByMonth: realMap,
-              invoicePaymentDateByMonth: dateMap,
-            };
+          consolidatedMap[invoiceMonth] = nowIso;
+
+          if (updateRealInvoice && totalApproved > 0) {
+            realMap[invoiceMonth] = totalApproved;
           }
-          return c;
-        });
-      }
+          if (paymentDate) {
+            dateMap[invoiceMonth] = paymentDate;
+          }
+
+          return {
+            ...c,
+            realInvoiceTotalByMonth: realMap,
+            invoicePaymentDateByMonth: dateMap,
+            lastConsolidatedAt: consolidatedMap,
+          };
+        }
+        return c;
+      });
 
       persistLocally({
         ...data,
