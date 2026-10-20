@@ -144,7 +144,7 @@ export function parseOfxStatement(text: string, fileName: string): ParsedBankSta
   };
 }
 
-// Parser de arquivo CSV ou TXT de extrato bancário
+// Parser de arquivo CSV ou TXT de extrato bancário (suporta formato de resumo diário: Data,Entrada,Saida,Saldo)
 export function parseCsvBankStatement(text: string, fileName: string): ParsedBankStatement {
   const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   let bankName = 'Extrato Bancário';
@@ -157,7 +157,6 @@ export function parseCsvBankStatement(text: string, fileName: string): ParsedBan
   let foundFinalBalance = false;
   let initialBalance = 0;
 
-  // Tenta identificar o banco pelo nome do arquivo ou cabeçalho
   const upperFileName = fileName.toUpperCase();
   if (upperFileName.includes('SANTANDER')) bankName = 'Santander';
   else if (upperFileName.includes('ITAU')) bankName = 'Itaú Unibanco';
@@ -166,95 +165,131 @@ export function parseCsvBankStatement(text: string, fileName: string): ParsedBan
   else if (upperFileName.includes('INTER')) bankName = 'Banco Inter';
   else if (upperFileName.includes('BB') || upperFileName.includes('BRASIL')) bankName = 'Banco do Brasil';
 
-  // Analisa cada linha
+  const firstLineUpper = (lines[0] || '').toUpperCase();
+  const isDailySummaryFormat =
+    firstLineUpper.includes('ENTRADA') ||
+    firstLineUpper.includes('SAIDA') ||
+    firstLineUpper.includes('CRÉDITO') ||
+    firstLineUpper.includes('DÉBITO');
+
   let balanceCandidates: number[] = [];
 
-  for (const line of lines) {
-    const upperLine = line.toUpperCase();
+  if (isDailySummaryFormat) {
+    // Formato de Resumo Diário: Data, Entrada, Saida, Saldo
+    for (let idx = 1; idx < lines.length; idx++) {
+      const line = lines[idx];
+      const sep = line.includes(';') ? ';' : line.includes('\t') ? '\t' : ',';
+      const parts = line.split(sep).map((p) => p.trim());
+      if (parts.length >= 3) {
+        const hasDate = parts.some((p) => /^\d{2}[\/\-]\d{2}([\/\-]\d{2,4})?$/.test(p) || /^\d{4}\-\d{2}\-\d{2}$/.test(p));
+        if (!hasDate) continue;
 
-    // Verifica se a linha contém indicação de saldo final/atual
-    if (
-      upperLine.includes('SALDO FINAL') ||
-      upperLine.includes('SALDO ATUAL') ||
-      upperLine.includes('SALDO DISPONIVEL') ||
-      upperLine.includes('SALDO EM CONTA') ||
-      upperLine.includes('SALDO DO DIA')
-    ) {
-      // Procura valores na linha
-      const tokens = line.split(/[;,\t]/);
-      for (let i = tokens.length - 1; i >= 0; i--) {
-        const val = parseBRLNumber(tokens[i]);
-        if (tokens[i].match(/[\d]/)) {
-          finalBalance = val;
-          foundFinalBalance = true;
-          break;
+        if (parts.length >= 4) {
+          const entry = parseBRLNumber(parts[1]);
+          const exit = parseBRLNumber(parts[2]);
+          const bal = parseBRLNumber(parts[3]);
+
+          if (entry > 0) credits += entry;
+          if (exit > 0) debits += Math.abs(exit);
+          if (bal !== 0 || parts[3] === '0' || parts[3] === '0,00') {
+            finalBalance = bal;
+            foundFinalBalance = true;
+          }
+          transactionCount++;
+        } else if (parts.length === 3) {
+          const flow = parseBRLNumber(parts[1]);
+          const bal = parseBRLNumber(parts[2]);
+          if (flow > 0) credits += flow;
+          else if (flow < 0) debits += Math.abs(flow);
+          if (bal !== 0 || parts[2] === '0' || parts[2] === '0,00') {
+            finalBalance = bal;
+            foundFinalBalance = true;
+          }
+          transactionCount++;
         }
       }
     }
+  } else {
+    // Formato padrão de transações detalhadas
+    for (const line of lines) {
+      const upperLine = line.toUpperCase();
 
-    // Identificação de transações
-    const sep = line.includes(';') ? ';' : line.includes('\t') ? '\t' : ',';
-    const parts = line.split(sep).map((p) => p.trim());
-
-    if (parts.length >= 2) {
-      // Procura coluna com data (DD/MM ou YYYY-MM)
-      const hasDate = parts.some((p) => /^\d{2}[\/\-]\d{2}([\/\-]\d{2,4})?$/.test(p) || /^\d{4}\-\d{2}\-\d{2}$/.test(p));
-      if (!hasDate) continue;
-
-      // Procura colunas numéricas
-      let rowAmount = 0;
-      let rowDesc = '';
-      let rowBalance: number | null = null;
-
-      for (let i = 0; i < parts.length; i++) {
-        const part = parts[i];
-        if (/[a-zA-ZÀ-ÿ]{3,}/.test(part) && !/^\d+$/.test(part)) {
-          if (!rowDesc || part.length > rowDesc.length) rowDesc = part;
-        }
-      }
-
-      // Procura valor e possível saldo corrente
-      const numbersInRow: number[] = [];
-      for (const part of parts) {
-        if (/[\d]/.test(part) && !/^\d{2}[\/\-]\d{2}/.test(part) && !/^\d{4}\-/.test(part)) {
-          const n = parseBRLNumber(part);
-          if (n !== 0 || part === '0' || part === '0,00') {
-            numbersInRow.push(n);
+      if (
+        upperLine.includes('SALDO FINAL') ||
+        upperLine.includes('SALDO ATUAL') ||
+        upperLine.includes('SALDO DISPONIVEL') ||
+        upperLine.includes('SALDO EM CONTA') ||
+        upperLine.includes('SALDO DO DIA')
+      ) {
+        const tokens = line.split(/[;,\t]/);
+        for (let i = tokens.length - 1; i >= 0; i--) {
+          const val = parseBRLNumber(tokens[i]);
+          if (tokens[i].match(/[\d]/)) {
+            finalBalance = val;
+            foundFinalBalance = true;
+            break;
           }
         }
       }
 
-      if (numbersInRow.length > 0) {
-        rowAmount = numbersInRow[0];
-        if (numbersInRow.length > 1) {
-          rowBalance = numbersInRow[numbersInRow.length - 1];
-          balanceCandidates.push(rowBalance);
+      const sep = line.includes(';') ? ';' : line.includes('\t') ? '\t' : ',';
+      const parts = line.split(sep).map((p) => p.trim());
+
+      if (parts.length >= 2) {
+        const hasDate = parts.some((p) => /^\d{2}[\/\-]\d{2}([\/\-]\d{2,4})?$/.test(p) || /^\d{4}\-\d{2}\-\d{2}$/.test(p));
+        if (!hasDate) continue;
+
+        let rowAmount = 0;
+        let rowDesc = '';
+
+        for (let i = 0; i < parts.length; i++) {
+          const part = parts[i];
+          if (/[a-zA-ZÀ-ÿ]{3,}/.test(part) && !/^\d+$/.test(part)) {
+            if (!rowDesc || part.length > rowDesc.length) rowDesc = part;
+          }
         }
 
-        transactionCount++;
-        if (rowAmount > 0) {
-          credits += rowAmount;
-        } else {
-          debits += Math.abs(rowAmount);
+        const numbersInRow: number[] = [];
+        for (const part of parts) {
+          if (/[\d]/.test(part) && !/^\d{2}[\/\-]\d{2}/.test(part) && !/^\d{4}\-/.test(part)) {
+            const n = parseBRLNumber(part);
+            if (n !== 0 || part === '0' || part === '0,00') {
+              numbersInRow.push(n);
+            }
+          }
         }
 
-        const upperDesc = (rowDesc || upperLine).toUpperCase();
-        if (
-          upperDesc.includes('JUROS') ||
-          upperDesc.includes('ENCARGOS') ||
-          upperDesc.includes('CHEQUE ESPECIAL') ||
-          upperDesc.includes('LIS')
-        ) {
-          interestPaid += Math.abs(rowAmount);
-        }
-        if (upperDesc.includes('IOF')) {
-          iofPaid += Math.abs(rowAmount);
+        if (numbersInRow.length > 0) {
+          rowAmount = numbersInRow[0];
+          if (numbersInRow.length > 1) {
+            const rowBalance = numbersInRow[numbersInRow.length - 1];
+            balanceCandidates.push(rowBalance);
+          }
+
+          transactionCount++;
+          if (rowAmount > 0) {
+            credits += rowAmount;
+          } else {
+            debits += Math.abs(rowAmount);
+          }
+
+          const upperDesc = (rowDesc || upperLine).toUpperCase();
+          if (
+            upperDesc.includes('JUROS') ||
+            upperDesc.includes('ENCARGOS') ||
+            upperDesc.includes('CHEQUE ESPECIAL') ||
+            upperDesc.includes('LIS')
+          ) {
+            interestPaid += Math.abs(rowAmount);
+          }
+          if (upperDesc.includes('IOF')) {
+            iofPaid += Math.abs(rowAmount);
+          }
         }
       }
     }
   }
 
-  // Se não achou tag explícita de saldo, mas tem candidatos de saldo no extrato
   if (!foundFinalBalance && balanceCandidates.length > 0) {
     finalBalance = balanceCandidates[balanceCandidates.length - 1];
     foundFinalBalance = true;
