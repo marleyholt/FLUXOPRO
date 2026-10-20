@@ -10,6 +10,17 @@ import {
   ArrowRight,
   ShieldCheck,
 } from 'lucide-react';
+import {
+  ComposedChart,
+  Bar,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  Legend,
+} from 'recharts';
 import { useFinance } from '../../context/FinanceContext';
 import { formatBRL } from '../../utils/calculations';
 
@@ -125,6 +136,64 @@ export const RaioXTab: React.FC = () => {
           >
             {totalDiff > 0 ? `+${formatBRL(totalDiff)} (Estouro)` : `${formatBRL(totalDiff)} (Economia)`}
           </span>
+        </div>
+      </div>
+
+      {/* Gráfico de Tendência Histórica: Despesas vs Orçado (12 Meses) */}
+      <div className="p-5 rounded-2xl bg-zinc-900/90 border border-zinc-800 shadow-sm space-y-4">
+        <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
+          <div>
+            <h3 className="text-sm font-bold text-white flex items-center gap-2">
+              <TrendingUp className="w-4 h-4 text-emerald-400" />
+              Tendência Histórica: Despesas Reais vs. Orçado (12 Meses)
+            </h3>
+            <p className="text-xs text-zinc-400 mt-0.5">
+              Evolução comparativa entre o teto planejado e o gasto efetivo ao longo do tempo.
+            </p>
+          </div>
+        </div>
+
+        <div className="h-72 w-full pt-2">
+          <ResponsiveContainer width="100%" height="100%">
+            <ComposedChart
+              data={summaries.slice(0, 12).map((s) => {
+                const logsForMonth = data.variableExpenseLogs.filter((l) => l.month === s.month);
+                const actualVar = logsForMonth.reduce((acc, curr) => acc + curr.amount, 0);
+                const targetVar = data.budgetEnvelopes.reduce((acc, curr) => acc + curr.targetAmount, 0);
+                const totalRealExpense = s.totalExpenses;
+                return {
+                  label: s.label,
+                  Orcado: targetVar,
+                  GastoReal: totalRealExpense,
+                };
+              })}
+              margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
+              <XAxis dataKey="label" stroke="#a1a1aa" fontSize={11} tickLine={false} />
+              <YAxis
+                stroke="#a1a1aa"
+                fontSize={11}
+                tickLine={false}
+                axisLine={false}
+                tickFormatter={(v) => `R$ ${(v / 1000).toFixed(0)}k`}
+              />
+              <Tooltip
+                contentStyle={{ backgroundColor: '#09090b', borderColor: '#27272a', borderRadius: 12 }}
+                formatter={(val: any) => [formatBRL(val), '']}
+              />
+              <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '8px' }} />
+              <Bar dataKey="Orcado" name="Teto Orçado" fill="#10b981" radius={[4, 4, 0, 0]} barSize={24} opacity={0.8} />
+              <Line
+                type="monotone"
+                dataKey="GastoReal"
+                name="Despesa Realizada"
+                stroke="#f43f5e"
+                strokeWidth={3}
+                dot={{ r: 4, fill: '#f43f5e' }}
+              />
+            </ComposedChart>
+          </ResponsiveContainer>
         </div>
       </div>
 

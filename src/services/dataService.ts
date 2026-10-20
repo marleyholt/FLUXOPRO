@@ -60,7 +60,7 @@ export async function loadAppData(): Promise<{ data: AppData; isUsingFirebase: b
             lastVisitTimestamp: new Date().toISOString(),
           },
         };
-        saveToLocalStorage(withVisit);
+        saveAppDataToLocalStorage(withVisit);
         return { data: withVisit, isUsingFirebase: true };
       } else {
         // Document doesn't exist yet, seed clean initial data to Firestore!
@@ -71,8 +71,8 @@ export async function loadAppData(): Promise<{ data: AppData; isUsingFirebase: b
             lastVisitTimestamp: new Date().toISOString(),
           },
         };
-        await setDoc(docRef, initialClean, { merge: true });
-        saveToLocalStorage(initialClean);
+        await setDoc(docRef, sanitizeForFirestore(initialClean), { merge: true });
+        saveAppDataToLocalStorage(initialClean);
         return { data: initialClean, isUsingFirebase: true };
       }
     } catch (err) {
@@ -100,11 +100,21 @@ export async function loadAppData(): Promise<{ data: AppData; isUsingFirebase: b
       lastVisitTimestamp: new Date().toISOString(),
     },
   };
-  saveToLocalStorage(cleanData);
+  saveAppDataToLocalStorage(cleanData);
+
   return { data: cleanData, isUsingFirebase: false };
 }
 
-// Save data: Updates localStorage and asynchronously syncs to Firestore
+// Save data only to localStorage (browser cache)
+export function saveAppDataToLocalStorage(data: AppData): void {
+  try {
+    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(data));
+  } catch (e) {
+    console.error('Error writing to localStorage:', e);
+  }
+}
+
+// Save data: Updates localStorage cache immediately
 export async function saveAppData(data: AppData): Promise<boolean> {
   const updatedData: AppData = {
     ...data,
@@ -113,32 +123,62 @@ export async function saveAppData(data: AppData): Promise<boolean> {
       lastBackupDate: new Date().toISOString(),
     },
   };
-
-  saveToLocalStorage(updatedData);
-
-  const config = getSavedFirebaseConfig();
-  if (config && config.projectId) {
-    try {
-      const db = getFirestoreInstance(config);
-      const docRef = doc(db, 'fluxo_caixa', 'main_workspace');
-      await setDoc(docRef, updatedData, { merge: true });
-      return true;
-    } catch (err) {
-      console.warn('Could not sync to Firebase:', err);
-      return false;
-    }
-  }
-
+  saveAppDataToLocalStorage(updatedData);
   return true;
 }
 
-function saveToLocalStorage(data: AppData): void {
+// Recursively strips any undefined fields that cause Firestore setDoc() to fail
+export function sanitizeForFirestore<T>(data: T): any {
+  function clean(val: any): any {
+    if (val === undefined) return null;
+    if (val === null) return null;
+    if (Array.isArray(val)) {
+      return val.map((item) => (item === undefined ? null : clean(item)));
+    }
+    if (typeof val === 'object') {
+      const res: Record<string, any> = {};
+      for (const [k, v] of Object.entries(val)) {
+        if (v !== undefined) {
+          res[k] = clean(v);
+        }
+      }
+      return res;
+    }
+    return val;
+  }
+  return JSON.parse(JSON.stringify(clean(data)));
+}
+
+// Explicit sync to Firebase Firestore triggered only by the user's action
+export async function saveAppDataToFirebase(data: AppData): Promise<{ success: boolean; error?: string }> {
+  const config = getSavedFirebaseConfig();
+  if (!config || !config.projectId) {
+    return { success: false, error: 'Firebase não está configurado neste projeto.' };
+  }
+
+  const updatedData: AppData = {
+    ...data,
+    settings: {
+      ...data.settings,
+      lastSyncedFirebaseAt: new Date().toISOString(),
+      lastBackupDate: new Date().toISOString(),
+    },
+  };
+
   try {
-    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(data));
-  } catch (e) {
-    console.error('Error writing to localStorage:', e);
+    const db = getFirestoreInstance(config);
+    const docRef = doc(db, 'fluxo_caixa', 'main_workspace');
+    const sanitized = sanitizeForFirestore(updatedData);
+    await setDoc(docRef, sanitized, { merge: true });
+    // Also update local cache with the new sync timestamp
+    saveAppDataToLocalStorage(updatedData);
+    return { success: true };
+  } catch (err: any) {
+    console.error('Error saving to Firebase:', err);
+    return { success: false, error: err?.message || 'Erro ao sincronizar com o Firebase' };
   }
 }
+
 
 // Export data as JSON file download
 export function exportDataAsJson(data: AppData): void {

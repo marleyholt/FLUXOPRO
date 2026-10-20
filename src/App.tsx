@@ -12,15 +12,28 @@ import { MonthlyControlTab } from './components/tabs/MonthlyControlTab';
 import { CardsTab } from './components/tabs/CardsTab';
 import { VariableIncomesTab } from './components/tabs/VariableIncomesTab';
 import { RaioXTab } from './components/tabs/RaioXTab';
+import { MonthlyClosingTab } from './components/tabs/MonthlyClosingTab';
+import { ConfigTab } from './components/tabs/ConfigTab';
+import { SimulationTab } from './components/tabs/SimulationTab';
 import { CsvImportModal } from './components/modals/CsvImportModal';
 import { NewTransactionModal } from './components/modals/NewTransactionModal';
 import { QuickExpenseModal } from './components/modals/QuickExpenseModal';
 import { RealInvoiceModal } from './components/modals/RealInvoiceModal';
 import { FirebaseBackupModal } from './components/modals/FirebaseBackupModal';
 import { RoutineChecklistModal } from './components/modals/RoutineChecklistModal';
-import { GitHubModal } from './components/modals/GitHubModal';
-import { Menu, PlusCircle, Upload, CheckSquare, GitBranch, Calendar } from 'lucide-react';
+import {
+  Menu,
+  PlusCircle,
+  Upload,
+  CheckSquare,
+  Calendar,
+  CloudUpload,
+  Cloud,
+  CheckCircle2,
+  AlertCircle,
+} from 'lucide-react';
 import { formatBRL } from './utils/calculations';
+
 
 function MainApp() {
   const {
@@ -30,9 +43,13 @@ function MainApp() {
     setSelectedMonth,
     summaries,
     currentMonthSummary,
+    hasUnsavedChanges,
+    isSavingToFirebase,
+    saveToFirebase,
   } = useFinance();
 
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [syncFeedback, setSyncFeedback] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
   // Modals state
   const [isCsvModalOpen, setIsCsvModalOpen] = useState(false);
@@ -43,7 +60,6 @@ function MainApp() {
   const [realInvoiceCardId, setRealInvoiceCardId] = useState<string>('');
   const [isBackupModalOpen, setIsBackupModalOpen] = useState(false);
   const [isChecklistModalOpen, setIsChecklistModalOpen] = useState(false);
-  const [isGitHubModalOpen, setIsGitHubModalOpen] = useState(false);
 
   const handleOpenQuickExpense = (envelopeId?: string) => {
     setQuickExpenseEnvelopeId(envelopeId);
@@ -53,6 +69,17 @@ function MainApp() {
   const handleOpenRealInvoice = (cardId: string) => {
     setRealInvoiceCardId(cardId);
     setIsRealInvoiceModalOpen(true);
+  };
+
+  const handleSyncToFirebase = async () => {
+    const res = await saveToFirebase();
+    if (res.success) {
+      setSyncFeedback({ text: 'Alterações gravadas no Firebase com sucesso!', type: 'success' });
+      setTimeout(() => setSyncFeedback(null), 3500);
+    } else {
+      setSyncFeedback({ text: res.error || 'Erro ao sincronizar com o Firebase', type: 'error' });
+      setTimeout(() => setSyncFeedback(null), 4500);
+    }
   };
 
   if (loading) {
@@ -78,7 +105,6 @@ function MainApp() {
         onOpenCsvImport={() => setIsCsvModalOpen(true)}
         onOpenBackupModal={() => setIsBackupModalOpen(true)}
         onOpenChecklistModal={() => setIsChecklistModalOpen(true)}
-        onOpenGitHubModal={() => setIsGitHubModalOpen(true)}
       />
 
       {/* Main Layout Area offset by Sidebar */}
@@ -119,6 +145,28 @@ function MainApp() {
 
           {/* Quick Action Buttons */}
           <div className="flex items-center gap-2">
+            
+            {/* Unsaved Changes / Firebase Sync Button */}
+            {hasUnsavedChanges ? (
+              <button
+                onClick={handleSyncToFirebase}
+                disabled={isSavingToFirebase}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-500 hover:bg-amber-400 text-zinc-950 transition shadow-md shadow-amber-500/20 ring-1 ring-amber-400 animate-pulse"
+                title="Alterações salvas no navegador. Clique aqui para gravar permanentemente no Firebase."
+              >
+                <CloudUpload className="w-3.5 h-3.5 stroke-[2.5]" />
+                <span>{isSavingToFirebase ? 'Gravando...' : 'Salvar no Firebase'}</span>
+              </button>
+            ) : (
+              <div
+                className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-zinc-900/80 border border-zinc-800 text-zinc-400 text-xs"
+                title="Tudo sincronizado na nuvem Firebase"
+              >
+                <Cloud className="w-3.5 h-3.5 text-emerald-400" />
+                <span className="text-[11px] text-zinc-300 font-medium">Nuvem OK</span>
+              </div>
+            )}
+
             <button
               onClick={() => setIsChecklistModalOpen(true)}
               className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-zinc-900 hover:bg-zinc-850 text-emerald-300 border border-emerald-500/30 transition shadow-sm"
@@ -126,15 +174,6 @@ function MainApp() {
             >
               <CheckSquare className="w-3.5 h-3.5" />
               <span>Roteiro Guiado</span>
-            </button>
-
-            <button
-              onClick={() => setIsGitHubModalOpen(true)}
-              className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-zinc-900 hover:bg-zinc-850 text-indigo-300 border border-indigo-500/30 transition shadow-sm"
-              title="Instruções para subir no GitHub"
-            >
-              <GitBranch className="w-3.5 h-3.5" />
-              <span>GitHub</span>
             </button>
 
             <button
@@ -155,6 +194,32 @@ function MainApp() {
             </button>
           </div>
         </header>
+
+        {/* Feedback Alert Banner */}
+        {syncFeedback && (
+          <div
+            className={`px-4 py-2 text-xs flex items-center justify-between border-b ${
+              syncFeedback.type === 'success'
+                ? 'bg-emerald-950/80 border-emerald-500/30 text-emerald-200'
+                : 'bg-rose-950/80 border-rose-500/30 text-rose-200'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              {syncFeedback.type === 'success' ? (
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+              ) : (
+                <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+              )}
+              <span>{syncFeedback.text}</span>
+            </div>
+            <button
+              onClick={() => setSyncFeedback(null)}
+              className="text-xs text-zinc-400 hover:text-white"
+            >
+              ✕
+            </button>
+          </div>
+        )}
 
         {/* Tab Content */}
         <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-6">
@@ -179,6 +244,8 @@ function MainApp() {
             />
           )}
 
+          {activeTab === 'closing' && <MonthlyClosingTab />}
+
           {activeTab === 'cards' && (
             <CardsTab
               onOpenNewTransaction={() => setIsNewTxModalOpen(true)}
@@ -194,7 +261,12 @@ function MainApp() {
           )}
 
           {activeTab === 'raiox' && <RaioXTab />}
+
+          {activeTab === 'simulation' && <SimulationTab />}
+
+          {activeTab === 'config' && <ConfigTab />}
         </main>
+
 
         {/* Footer */}
         <footer className="border-t border-zinc-900 bg-zinc-950 py-4 text-center text-xs text-zinc-400">
@@ -240,11 +312,6 @@ function MainApp() {
       <RoutineChecklistModal
         isOpen={isChecklistModalOpen}
         onClose={() => setIsChecklistModalOpen(false)}
-      />
-
-      <GitHubModal
-        isOpen={isGitHubModalOpen}
-        onClose={() => setIsGitHubModalOpen(false)}
       />
     </div>
   );

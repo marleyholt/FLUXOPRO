@@ -48,6 +48,17 @@ export interface VariableExpenseLog {
   date: string; // YYYY-MM-DD
 }
 
+export interface BankAccountConfig {
+  id: string;
+  name: string;
+  agency?: string;
+  accountNumber?: string;
+  overdraftLimit: number; // Limite de cheque especial contratado (R$)
+  overdraftRateMonthly: number; // Taxa de juros cheque especial (% a.m. - ex: 8.0)
+  overdraftFreeDays: number; // Dias sem juros concedidos pelo banco (ex: 10 dias no Santander)
+  color?: string;
+}
+
 export interface CreditCard {
   id: string;
   name: string;
@@ -56,7 +67,11 @@ export interface CreditCard {
   color: string;
   dueDay: number;
   closingDay: number;
+  limit?: number; // Limite total do cartão (R$)
+  rotativoRateMonthly?: number; // Taxa do rotativo (% a.m. - ex: 14.5)
+  parcelamentoRateMonthly?: number; // Taxa do parcelamento da fatura (% a.m. - ex: 4.2)
   realInvoiceTotalByMonth?: Record<string, number>; // key: YYYY-MM -> real bank total
+  invoicePaymentDateByMonth?: Record<string, string>; // key: YYYY-MM -> YYYY-MM-DD data de vencimento/pagamento
 }
 
 export interface CardTransaction {
@@ -96,12 +111,66 @@ export interface MonthSummary {
   isPositive: boolean;
 }
 
+export interface ScheduledBillReminder {
+  id: string;
+  expenseId: string;
+  expenseTitle: string;
+  amount: number;
+  scheduledDate: string; // YYYY-MM-DD
+  month: string; // YYYY-MM
+  status: 'scheduled' | 'paid';
+  createdAt: string;
+}
+
+export interface PushedDebtBill {
+  id: string;
+  expenseId: string;
+  expenseTitle: string;
+  amount: number;
+  month: string; // YYYY-MM
+  pushedAt: string;
+  reason?: string;
+  status: 'pushed' | 'paid';
+}
+
+export interface BankStatementUploadRecord {
+  id: string;
+  bankName: string;
+  fileName: string;
+  initialBalance: number;
+  finalBalance: number;
+  credits: number;
+  debits: number;
+  interestPaid: number;
+  iofPaid: number;
+  uploadedAt: string;
+}
+
+export interface MonthlyClosingRecord {
+  month: string; // YYYY-MM
+  closedAt?: string; // ISO
+  isClosed?: boolean; // Se true, o mês está bloqueado contra edições e exclusões
+  closingRealBalance: number; // Saldo real na conta corrente ao final do mês
+  projectedBalance: number; // Saldo projetado calculado pelo sistema
+  adjustmentDifference: number; // real - projetado
+  isOverdraft: boolean; // se closingRealBalance < 0
+  scheduledReminders: ScheduledBillReminder[];
+  pushedDebts: PushedDebtBill[];
+  notes?: string;
+  reopenedReason?: string;
+  reopenedAt?: string;
+  reopenHistory?: { reason: string; timestamp: string }[];
+  bankStatementsUploaded?: BankStatementUploadRecord[];
+}
+
+
 export interface AppSettings {
   startMonth: string; // '2025-12'
   initialBalance: number; // e.g. 0 or previous
   firebaseConfigJson?: string;
   lastBackupDate?: string;
   lastVisitTimestamp?: string;
+  lastSyncedFirebaseAt?: string;
   lastExpenseLogged?: {
     description: string;
     amount: number;
@@ -118,6 +187,8 @@ export interface AppData {
   variableExpenseLogs: VariableExpenseLog[];
   creditCards: CreditCard[];
   cardTransactions: CardTransaction[];
+  bankAccounts?: BankAccountConfig[];
+  monthlyClosings?: Record<string, MonthlyClosingRecord>;
 }
 
 export interface CsvParsedItem {
@@ -131,3 +202,4 @@ export interface CsvParsedItem {
   selected: boolean;
   needsReview: boolean;
 }
+

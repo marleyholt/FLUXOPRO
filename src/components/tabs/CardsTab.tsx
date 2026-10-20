@@ -209,6 +209,15 @@ export const CardsTab: React.FC<CardsTabProps> = ({
               <span className="font-mono-numbers font-extrabold text-emerald-300 text-base">
                 {formatBRL(effectiveInvoiceTotal)}
               </span>
+              {activeCard.invoicePaymentDateByMonth?.[selectedMonth] ? (
+                <span className="text-[10px] text-zinc-300 block font-mono-numbers mt-0.5">
+                  Pgto: {new Date(activeCard.invoicePaymentDateByMonth[selectedMonth] + 'T12:00:00').toLocaleDateString('pt-BR')}
+                </span>
+              ) : (
+                <span className="text-[10px] text-zinc-400 block font-mono-numbers mt-0.5">
+                  Venc. padrão: Dia {activeCard.dueDay}
+                </span>
+              )}
             </div>
 
             {/* Adjust Real Invoice Button */}

@@ -239,8 +239,12 @@ export function calculateForecast(
 
     const finalBalance = totalIncome - totalExpenses;
 
-    // Track for next month
-    carriedBalance = finalBalance;
+    // Track for next month: check if there is an explicit monthly closing registered for this month
+    if (data.monthlyClosings && data.monthlyClosings[month] && typeof data.monthlyClosings[month].closingRealBalance === 'number') {
+      carriedBalance = data.monthlyClosings[month].closingRealBalance;
+    } else {
+      carriedBalance = finalBalance;
+    }
 
     summaries.push({
       month,

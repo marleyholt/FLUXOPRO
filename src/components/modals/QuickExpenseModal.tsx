@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Sparkles, Plus, DollarSign, Calendar } from 'lucide-react';
+import { X, Sparkles, Plus, DollarSign, Calendar, Lock } from 'lucide-react';
 import { useFinance } from '../../context/FinanceContext';
 
 interface QuickExpenseModalProps {
@@ -13,7 +13,8 @@ export const QuickExpenseModal: React.FC<QuickExpenseModalProps> = ({
   onClose,
   defaultEnvelopeId,
 }) => {
-  const { data, selectedMonth, addVariableExpenseLog } = useFinance();
+  const { data, selectedMonth, addVariableExpenseLog, isMonthClosed } = useFinance();
+  const isClosed = isMonthClosed(selectedMonth);
 
   const [categoryId, setCategoryId] = useState<string>(
     defaultEnvelopeId || data.budgetEnvelopes[0]?.id || ''
@@ -28,6 +29,10 @@ export const QuickExpenseModal: React.FC<QuickExpenseModalProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (isClosed) {
+      alert('Este mês está fechado e bloqueado contra novos lançamentos.');
+      return;
+    }
     const parsed = parseFloat(amount);
     if (!description || isNaN(parsed) || parsed <= 0) return;
 
@@ -41,6 +46,7 @@ export const QuickExpenseModal: React.FC<QuickExpenseModalProps> = ({
 
     onClose();
   };
+
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
@@ -121,15 +127,28 @@ export const QuickExpenseModal: React.FC<QuickExpenseModalProps> = ({
             </div>
           </div>
 
+          {isClosed && (
+            <div className="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-center gap-2">
+              <Lock className="w-4 h-4 text-amber-400 shrink-0" />
+              <span>Este mês está fechado e bloqueado contra novos lançamentos.</span>
+            </div>
+          )}
+
           <div className="pt-2">
             <button
               type="submit"
-              className="w-full py-2.5 rounded-xl text-xs font-bold bg-emerald-500 hover:bg-emerald-400 text-zinc-950 transition shadow-md shadow-emerald-500/20"
+              disabled={isClosed}
+              className={`w-full py-2.5 rounded-xl text-xs font-bold transition shadow-md ${
+                isClosed
+                  ? 'bg-zinc-800 text-zinc-500 cursor-not-allowed'
+                  : 'bg-emerald-500 hover:bg-emerald-400 text-zinc-950 shadow-emerald-500/20'
+              }`}
             >
-              Adicionar ao Envelope
+              {isClosed ? 'Mês Fechado (Bloqueado)' : 'Adicionar ao Envelope'}
             </button>
           </div>
         </form>
+
 
       </div>
     </div>

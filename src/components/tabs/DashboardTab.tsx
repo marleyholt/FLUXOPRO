@@ -184,7 +184,34 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
       }
     });
 
+  // 3. Pushed Debts from Monthly Closings (alimenta projeção de dívidas)
+  Object.values(data.monthlyClosings || {}).forEach((closing) => {
+    (closing.pushedDebts || [])
+      .filter((p) => p.status === 'pushed')
+      .forEach((p) => {
+        futureDebts.push({
+          id: p.id,
+          title: `[Empurrada] ${p.expenseTitle}`,
+          origin: `Fechamento ${closing.month} (${p.reason || 'Pagar quando der'})`,
+          scope: 'PF',
+          monthlyAmount: p.amount,
+          remainingInstallments: 1,
+          totalRemainingDebt: p.amount,
+          endMonth: 'Pendente',
+        });
+      });
+  });
+
   const totalFutureDebt = futureDebts.reduce((acc, curr) => acc + curr.totalRemainingDebt, 0);
+
+  // Scheduled Reminders and Pushed list
+  const activeScheduledReminders = Object.values(data.monthlyClosings || {})
+    .flatMap((c) => c.scheduledReminders || [])
+    .filter((r) => r.status === 'scheduled');
+  const activePushedDebts = Object.values(data.monthlyClosings || {})
+    .flatMap((c) => c.pushedDebts || [])
+    .filter((p) => p.status === 'pushed');
+
 
   // Prepare data for 12M Cashflow Area & Composed Chart
   const chartData = summaries.slice(0, 12).map((s) => ({
@@ -274,7 +301,7 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
             onClick={() => setActiveTab('monthly')}
             className="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 transition font-medium"
           >
-            Ver Checklist do Mês
+            Ver Previsão & Controle
           </button>
           <button
             onClick={onOpenNewTransaction}
@@ -285,8 +312,41 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
         </div>
       </div>
 
+      {/* Reminders & Pushed Debts Alert Banner */}
+      {(activeScheduledReminders.length > 0 || activePushedDebts.length > 0) && (
+        <div className="p-3.5 rounded-xl bg-gradient-to-r from-indigo-950/40 via-zinc-900 to-amber-950/40 border border-indigo-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-2.5">
+            <Clock className="w-4 h-4 text-indigo-400 shrink-0" />
+            <div>
+              <strong className="text-zinc-100 font-bold block">
+                Alertas do Fechamento Mensal
+              </strong>
+              <span className="text-zinc-300">
+                {activeScheduledReminders.length > 0 && (
+                  <span>
+                    ⏰ <strong>{activeScheduledReminders.length}</strong> conta(s) com pagamento programado ({formatBRL(activeScheduledReminders.reduce((a, b) => a + b.amount, 0))}).{' '}
+                  </span>
+                )}
+                {activePushedDebts.length > 0 && (
+                  <span className="text-amber-300">
+                    ⚠️ <strong>{activePushedDebts.length}</strong> dívida(s) empurrada(s) somando <strong>{formatBRL(activePushedDebts.reduce((a, b) => a + b.amount, 0))}</strong> na projeção.
+                  </span>
+                )}
+              </span>
+            </div>
+          </div>
+          <button
+            onClick={() => setActiveTab('closing')}
+            className="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-indigo-300 border border-indigo-500/30 font-semibold transition self-start sm:self-auto shrink-0"
+          >
+            Ver Fechamento Mensal →
+          </button>
+        </div>
+      )}
+
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
+
         {/* Card 1: Saldo Anterior */}
         <div className="p-4 rounded-xl bg-zinc-900/90 border border-zinc-800/80 shadow-sm">
           <div className="flex items-center justify-between text-xs text-zinc-400 mb-1">

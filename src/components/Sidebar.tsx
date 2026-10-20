@@ -16,9 +16,12 @@ import {
   Clock,
   CheckCircle2,
   GitBranch,
+  CalendarCheck,
   Building2,
   User,
   Sparkles,
+  Calculator,
+  Settings,
 } from 'lucide-react';
 import { useFinance } from '../context/FinanceContext';
 import { ScopeType } from '../types/finance';
@@ -31,8 +34,9 @@ interface SidebarProps {
   onOpenCsvImport: () => void;
   onOpenBackupModal: () => void;
   onOpenChecklistModal: () => void;
-  onOpenGitHubModal: () => void;
+  onOpenGitHubModal?: () => void;
 }
+
 
 export const Sidebar: React.FC<SidebarProps> = ({
   isCollapsed,
@@ -60,10 +64,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const tabs = [
     { id: 'dashboard', label: 'Dashboard & Dívidas', icon: TrendingUp },
     { id: 'matrix', label: 'Matriz Anual (12 Meses)', icon: FileSpreadsheet },
-    { id: 'monthly', label: 'Controle & Envelopes', icon: Calendar },
+    { id: 'monthly', label: 'Previsão & Controle', icon: Calendar },
+    { id: 'closing', label: 'Fechamento Mensal (30/31)', icon: CalendarCheck },
     { id: 'cards', label: 'Central de Cartões', icon: CreditCard },
     { id: 'variables', label: 'Receitas Variáveis', icon: Layers },
     { id: 'raiox', label: 'Raio-X Previsto vs Real', icon: PieChart },
+    { id: 'simulation', label: 'Simulação & Juros', icon: Calculator },
+    { id: 'config', label: 'Configurações', icon: Settings },
   ] as const;
 
   // Format activity
@@ -116,14 +123,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
         )}
 
-        <button
-          onClick={onToggleCollapse}
-          className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800/80 transition"
-          title={isCollapsed ? 'Expandir menu lateral' : 'Recolher menu lateral'}
-        >
-          {isCollapsed ? <Menu className="w-5 h-5" /> : <ChevronLeft className="w-5 h-5" />}
-        </button>
+        {/* Subtle collapse button only when expanded, never showing a duplicate hamburger menu */}
+        {!isCollapsed && (
+          <button
+            onClick={onToggleCollapse}
+            className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800/80 transition"
+            title="Recolher menu lateral"
+          >
+            <ChevronLeft className="w-5 h-5" />
+          </button>
+        )}
       </div>
+
 
       {/* Month & Scope Controls (When expanded) */}
       {!isCollapsed && (
@@ -249,19 +260,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
             {!isCollapsed && <span>Importar PDF / CSV</span>}
           </button>
 
-          {/* GitHub Deploy Guide */}
-          <button
-            onClick={onOpenGitHubModal}
-            className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold bg-zinc-900/60 hover:bg-zinc-800 text-zinc-300 border border-zinc-800 transition ${
-              isCollapsed ? 'justify-center px-0' : ''
-            }`}
-            title="Deploy no GitHub"
-          >
-            <GitBranch className="w-4 h-4 text-indigo-400 shrink-0" />
-            {!isCollapsed && <span>Subir no GitHub</span>}
-          </button>
-
           {/* Cloud & Backup */}
+
           <button
             onClick={onOpenBackupModal}
             className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold bg-zinc-900/60 hover:bg-zinc-800 text-zinc-300 border border-zinc-800 transition ${

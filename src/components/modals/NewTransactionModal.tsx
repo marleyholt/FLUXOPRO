@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   X,
   CreditCard,
@@ -8,7 +8,9 @@ import {
   Calendar,
   Layers,
   Sparkles,
+  Lock,
 } from 'lucide-react';
+
 import { useFinance } from '../../context/FinanceContext';
 import { ExpenseFrequency, ScopeType } from '../../types/finance';
 
@@ -21,10 +23,18 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
   isOpen,
   onClose,
 }) => {
-  const { data, selectedMonth, summaries, addExpense, addIncome, addCardTransaction } =
-    useFinance();
+  const {
+    data,
+    selectedMonth,
+    summaries,
+    addIncome,
+    addCardTransaction,
+    addOrIncrementExpense,
+    isMonthClosed,
+  } = useFinance();
 
   const [activeTab, setActiveTab] = useState<'expense' | 'income' | 'cardTx'>('expense');
+
 
   // Common fields
   const [title, setTitle] = useState('');
@@ -36,9 +46,34 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
 
   // Expense specific
   const [expenseCategory, setExpenseCategory] = useState('Moradia/Contas');
+  const [isNewCategory, setIsNewCategory] = useState(false);
+  const [customCategoryName, setCustomCategoryName] = useState('');
+  const [customCategoryTarget, setCustomCategoryTarget] = useState('');
   const [frequency, setFrequency] = useState<ExpenseFrequency>('fixed');
   const [installmentsCount, setInstallmentsCount] = useState('12');
   const [periodicInterval, setPeriodicInterval] = useState<'quarterly' | 'annual'>('quarterly');
+
+  // Dynamic Categories list
+  const availableCategories = useMemo(() => {
+    const defaultList = [
+      'Moradia/Contas',
+      'Financiamento/Dívidas',
+      'Educação',
+      'Família/Pets',
+      'Impostos/DAS',
+      'Contador',
+      'Manutenção',
+      'Supermercado/Feira',
+      'Alimentação / iFood',
+      'Transporte / Combustível',
+      'Farmácia / Saúde',
+      'Lazer / Assinaturas',
+      'Outros',
+    ];
+    const fromExpenses = data.expenses.map((e) => e.category);
+    const fromEnvelopes = data.budgetEnvelopes.map((e) => e.name);
+    return Array.from(new Set([...defaultList, ...fromExpenses, ...fromEnvelopes].filter(Boolean)));
+  }, [data.expenses, data.budgetEnvelopes]);
 
   // Income specific
   const [incomeType, setIncomeType] = useState<'fixed' | 'variable'>('fixed');
@@ -54,29 +89,32 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
 
   if (!isOpen) return null;
 
+  const isTargetMonthClosed = isMonthClosed(startMonth);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (isTargetMonthClosed) {
+      alert(`O mês de ${startMonth} está fechado e bloqueado contra novos lançamentos.`);
+      return;
+    }
     const parsedAmount = parseFloat(amount);
     if (!title || isNaN(parsedAmount) || parsedAmount <= 0) return;
 
     if (activeTab === 'expense') {
-      let periodicMonths: number[] | undefined;
-      if (frequency === 'periodic') {
-        periodicMonths = periodicInterval === 'quarterly' ? [3, 6, 9, 12] : [1];
-      }
+      const resolvedCategory = isNewCategory ? customCategoryName.trim() : expenseCategory;
+      if (!resolvedCategory) return;
 
-      addExpense({
+
+      addOrIncrementExpense({
         title,
         amount: parsedAmount,
+        category: resolvedCategory,
         scope,
-        category: expenseCategory,
+        month: startMonth,
         frequency,
-        startMonth,
         installmentsCount: frequency === 'installment' ? parseInt(installmentsCount, 10) : undefined,
-        periodicMonths,
-        singleMonth: frequency === 'single' ? startMonth : undefined,
         notes,
-        needsReview,
+        targetEnvelopeAmount: customCategoryTarget ? parseFloat(customCategoryTarget) : undefined,
       });
     } else if (activeTab === 'income') {
       const resolvedSource =
@@ -110,6 +148,7 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
 
     onClose();
   };
+
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
@@ -178,21 +217,33 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
         {/* Modal Form */}
         <form onSubmit={handleSubmit} className="p-5 overflow-y-auto space-y-4 flex-1 text-xs">
           
-          {/* Card Selection (if card tab) */}
+          {/* Card Selection & Start Month (if card tab) */}
           {activeTab === 'cardTx' && (
-            <div className="space-y-1">
-              <label className="font-semibold text-zinc-300">Cartão de Crédito</label>
-              <select
-                value={selectedCardId}
-                onChange={(e) => setSelectedCardId(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-700 text-white outline-none focus:border-emerald-500"
-              >
-                {data.creditCards.map((card) => (
-                  <option key={card.id} value={card.id}>
-                    {card.name} ({card.scope} - Venc. Dia {card.dueDay})
-                  </option>
-                ))}
-              </select>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="font-semibold text-zinc-300">Cartão de Crédito</label>
+                <select
+                  value={selectedCardId}
+                  onChange={(e) => setSelectedCardId(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-700 text-white outline-none focus:border-emerald-500"
+                >
+                  {data.creditCards.map((card) => (
+                    <option key={card.id} value={card.id}>
+                      {card.name} ({card.scope} - Venc. Dia {card.dueDay})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-1">
+                <label className="font-semibold text-zinc-300">Mês da Fatura (Início da Cobrança)</label>
+                <input
+                  type="month"
+                  value={startMonth}
+                  onChange={(e) => setStartMonth(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-700 text-white font-mono-numbers outline-none focus:border-emerald-500"
+                />
+              </div>
             </div>
           )}
 
@@ -243,12 +294,19 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
               >
                 {summaries.map((s) => (
                   <option key={s.month} value={s.month}>
-                    {s.label} ({s.month})
+                    {s.label} ({s.month}) {isMonthClosed(s.month) ? '🔒 Fechado' : ''}
                   </option>
                 ))}
               </select>
+              {isTargetMonthClosed && (
+                <div className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 text-[11px] flex items-center gap-1.5 mt-1">
+                  <Lock className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                  <span>Mês fechado e bloqueado contra alterações.</span>
+                </div>
+              )}
             </div>
           </div>
+
 
           {/* Scope & Frequency or Types */}
           {activeTab === 'expense' && (
@@ -309,25 +367,69 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
                 </div>
               )}
 
-              <div className="space-y-1">
-                <label className="font-semibold text-zinc-300">Categoria</label>
-                <select
-                  value={expenseCategory}
-                  onChange={(e) => setExpenseCategory(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-700 text-white outline-none focus:border-emerald-500"
-                >
-                  <option value="Moradia/Contas">Moradia / Contas de Consumo</option>
-                  <option value="Financiamento/Dívidas">Financiamento / Empréstimos</option>
-                  <option value="Educação">Educação / Cursos</option>
-                  <option value="Família/Pets">Família / Pets / Saúde</option>
-                  <option value="Impostos/DAS">Impostos / DAS</option>
-                  <option value="Contador">Honorários Contador</option>
-                  <option value="Manutenção">Manutenção Periódica</option>
-                  <option value="Outros">Outros</option>
-                </select>
+              <div className="space-y-2 p-3 rounded-xl bg-zinc-900/60 border border-zinc-800">
+                <div className="flex items-center justify-between">
+                  <label className="font-semibold text-zinc-300">Categoria da Despesa</label>
+                  <button
+                    type="button"
+                    onClick={() => setIsNewCategory(!isNewCategory)}
+                    className="text-[11px] font-semibold text-emerald-400 hover:text-emerald-300 transition"
+                  >
+                    {isNewCategory ? '← Escolher existente' : '+ Criar Nova Categoria'}
+                  </button>
+                </div>
+
+                {!isNewCategory ? (
+                  <>
+                    <select
+                      value={expenseCategory}
+                      onChange={(e) => setExpenseCategory(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-700 text-white outline-none focus:border-emerald-500"
+                    >
+                      {availableCategories.map((cat) => (
+                        <option key={cat} value={cat}>
+                          {cat}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-[10px] text-zinc-400">
+                      💡 Ao lançar em uma categoria existente, o valor é somado na matriz e discriminado em detalhes na aba Previsão & Controle.
+                    </p>
+                  </>
+                ) : (
+                  <div className="space-y-2 animate-in fade-in">
+                    <div>
+                      <label className="text-[11px] text-zinc-400 block mb-1">
+                        Nome da Nova Categoria (gerará uma nova linha na matriz):
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="Ex: Consultas Médicas, Manutenção Carro, Petshop..."
+                        value={customCategoryName}
+                        onChange={(e) => setCustomCategoryName(e.target.value)}
+                        className="w-full px-3 py-2 rounded-lg bg-zinc-950 border border-emerald-500/50 text-white outline-none focus:border-emerald-400"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[11px] text-zinc-400 block mb-1">
+                        Teto / Previsão Mensal Inicial (R$) (opcional):
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        placeholder="Ex: 500.00"
+                        value={customCategoryTarget}
+                        onChange={(e) => setCustomCategoryTarget(e.target.value)}
+                        className="w-full px-3 py-1.5 rounded-lg bg-zinc-950 border border-zinc-700 text-white font-mono-numbers outline-none focus:border-emerald-500"
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
             </>
           )}
+
 
           {activeTab === 'income' && (
             <div className="space-y-3">
@@ -487,11 +589,17 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
           <div className="pt-3">
             <button
               type="submit"
-              className="w-full py-2.5 rounded-xl text-xs font-bold bg-emerald-500 hover:bg-emerald-400 text-zinc-950 transition shadow-md shadow-emerald-500/20"
+              disabled={isTargetMonthClosed}
+              className={`w-full py-2.5 rounded-xl text-xs font-bold transition shadow-md ${
+                isTargetMonthClosed
+                  ? 'bg-zinc-800 text-zinc-500 cursor-not-allowed'
+                  : 'bg-emerald-500 hover:bg-emerald-400 text-zinc-950 shadow-emerald-500/20'
+              }`}
             >
-              Confirmar e Salvar Lançamento
+              {isTargetMonthClosed ? 'Mês Fechado (Bloqueado)' : 'Confirmar e Salvar Lançamento'}
             </button>
           </div>
+
 
         </form>
 

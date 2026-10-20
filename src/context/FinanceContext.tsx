@@ -10,10 +10,18 @@ import {
   CardTransaction,
   AppSettings,
   CsvParsedItem,
+  VariableBudgetCategory,
+  MonthlyClosingRecord,
+  ScheduledBillReminder,
+  PushedDebtBill,
+  ExpenseFrequency,
+  BankAccountConfig,
+  BankStatementUploadRecord,
 } from '../types/finance';
 import {
   loadAppData,
   saveAppData,
+  saveAppDataToFirebase,
   saveFirebaseConfig,
 } from '../services/dataService';
 import { INITIAL_SEED_DATA } from '../data/seedData';
@@ -24,15 +32,21 @@ interface FinanceContextType {
   data: AppData;
   loading: boolean;
   isUsingFirebase: boolean;
+  hasUnsavedChanges: boolean;
+  isSavingToFirebase: boolean;
   selectedMonth: string;
   setSelectedMonth: (m: string) => void;
   scopeFilter: ScopeType;
   setScopeFilter: (s: ScopeType) => void;
-  activeTab: 'dashboard' | 'matrix' | 'monthly' | 'cards' | 'variables' | 'raiox';
-  setActiveTab: (tab: 'dashboard' | 'matrix' | 'monthly' | 'cards' | 'variables' | 'raiox') => void;
+  activeTab: 'dashboard' | 'matrix' | 'monthly' | 'cards' | 'variables' | 'raiox' | 'closing' | 'simulation' | 'settings' | 'config';
+  setActiveTab: (tab: 'dashboard' | 'matrix' | 'monthly' | 'cards' | 'variables' | 'raiox' | 'closing' | 'simulation' | 'settings' | 'config') => void;
   summaries: MonthSummary[];
   currentMonthSummary: MonthSummary | undefined;
   
+  // Sync & Cloud Actions
+  saveToFirebase: () => Promise<{ success: boolean; error?: string }>;
+  discardUnsavedChanges: () => Promise<void>;
+
   // Actions
   addIncome: (income: Omit<Income, 'id'>) => void;
   updateIncome: (income: Income) => void;
@@ -48,17 +62,70 @@ interface FinanceContextType {
   updateCardTransaction: (tx: CardTransaction) => void;
   deleteCardTransaction: (id: string) => void;
   toggleCardTransactionReview: (id: string) => void;
-  setCardRealInvoice: (cardId: string, month: string, realTotal: number | undefined) => void;
+  setCardRealInvoice: (cardId: string, month: string, realTotal: number | undefined, paymentDate?: string) => void;
 
   addVariableExpenseLog: (log: Omit<VariableExpenseLog, 'id'>) => void;
+  updateVariableExpenseLog: (log: VariableExpenseLog) => void;
   deleteVariableExpenseLog: (id: string) => void;
+  createBudgetCategory: (category: Omit<VariableBudgetCategory, 'id'>) => string;
   updateBudgetEnvelopeTarget: (envelopeId: string, newTarget: number) => void;
+  updateBudgetEnvelope: (envelopeId: string, name: string, targetAmount: number) => void;
+  deleteBudgetEnvelope: (envelopeId: string) => void;
+
+  addOrIncrementExpense: (params: {
+    title: string;
+    amount: number;
+    category: string;
+    scope: 'PF' | 'PJ';
+    month: string;
+    frequency: ExpenseFrequency;
+    installmentsCount?: number;
+    notes?: string;
+    targetEnvelopeAmount?: number;
+  }) => void;
+
+  // Monthly Closing Actions & Month Locking
+  isMonthClosed: (month: string) => boolean;
+  closeMonth: (month: string) => void;
+  reopenMonth: (month: string, reason?: string) => void;
+  saveMonthlyClosing: (record: MonthlyClosingRecord) => void;
+  saveBankStatementResult: (
+    month: string,
+    statement: BankStatementUploadRecord,
+    applyBalanceToClosing: boolean
+  ) => void;
+  scheduleBillPayment: (
+    expenseId: string,
+    expenseTitle: string,
+    amount: number,
+    month: string,
+    scheduledDate: string
+  ) => void;
+  pushBillDebt: (
+    expenseId: string,
+    expenseTitle: string,
+    amount: number,
+    month: string,
+    reason?: string
+  ) => void;
+  resolveScheduledReminder: (month: string, reminderId: string) => void;
+  resolvePushedDebt: (month: string, pushedDebtId: string) => void;
+
+  // Banks & Cards Management
+  addBankAccount: (bank: Omit<BankAccountConfig, 'id'>) => void;
+  updateBankAccount: (bank: BankAccountConfig) => void;
+  deleteBankAccount: (id: string) => void;
+
+  addCreditCard: (card: Omit<CreditCard, 'id'>) => void;
+  updateCreditCard: (card: CreditCard) => void;
+  deleteCreditCard: (id: string) => void;
 
   importCsvTransactions: (
     cardId: string,
     invoiceMonth: string,
     items: CsvParsedItem[],
-    updateRealInvoice: boolean
+    updateRealInvoice: boolean,
+    paymentDate?: string
   ) => void;
 
   toggleChecklistStep: (stepId: string) => void;
@@ -74,9 +141,11 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [data, setData] = useState<AppData>(INITIAL_SEED_DATA);
   const [loading, setLoading] = useState<boolean>(true);
   const [isUsingFirebase, setIsUsingFirebase] = useState<boolean>(false);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState<boolean>(false);
+  const [isSavingToFirebase, setIsSavingToFirebase] = useState<boolean>(false);
   const [selectedMonth, setSelectedMonth] = useState<string>('2025-12');
   const [scopeFilter, setScopeFilter] = useState<ScopeType>('ALL');
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'matrix' | 'monthly' | 'cards' | 'variables' | 'raiox'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'matrix' | 'monthly' | 'cards' | 'variables' | 'raiox' | 'closing' | 'simulation' | 'settings' | 'config'>('dashboard');
 
   // Load initial data
   useEffect(() => {
@@ -94,10 +163,32 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     };
   }, []);
 
-  // Save changes
-  const persist = useCallback((newData: AppData) => {
+  // Save changes locally in browser cache and mark unsaved state
+  const persistLocally = useCallback((newData: AppData) => {
     setData(newData);
     saveAppData(newData);
+    setHasUnsavedChanges(true);
+  }, []);
+
+  // Sync to Firebase on demand
+  const saveToFirebase = useCallback(async (): Promise<{ success: boolean; error?: string }> => {
+    setIsSavingToFirebase(true);
+    const result = await saveAppDataToFirebase(data);
+    setIsSavingToFirebase(false);
+    if (result.success) {
+      setHasUnsavedChanges(false);
+    }
+    return result;
+  }, [data]);
+
+  // Discard local changes and reload from remote
+  const discardUnsavedChanges = useCallback(async () => {
+    setLoading(true);
+    const result = await loadAppData();
+    setData(result.data);
+    setIsUsingFirebase(result.isUsingFirebase);
+    setHasUnsavedChanges(false);
+    setLoading(false);
   }, []);
 
   // Calculate rolling forecast
@@ -109,6 +200,14 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return summaries.find((s) => s.month === selectedMonth) || summaries[0];
   }, [summaries, selectedMonth]);
 
+  // Month locking check
+  const isMonthClosed = useCallback(
+    (month: string) => {
+      return !!data.monthlyClosings?.[month]?.isClosed;
+    },
+    [data.monthlyClosings]
+  );
+
   // Income actions
   const addIncome = useCallback(
     (income: Omit<Income, 'id'>) => {
@@ -116,29 +215,29 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         ...income,
         id: `inc-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       };
-      persist({ ...data, incomes: [...data.incomes, newIncome] });
+      persistLocally({ ...data, incomes: [...data.incomes, newIncome] });
     },
-    [data, persist]
+    [data, persistLocally]
   );
 
   const updateIncome = useCallback(
     (income: Income) => {
-      persist({
+      persistLocally({
         ...data,
         incomes: data.incomes.map((inc) => (inc.id === income.id ? income : inc)),
       });
     },
-    [data, persist]
+    [data, persistLocally]
   );
 
   const deleteIncome = useCallback(
     (id: string) => {
-      persist({
+      persistLocally({
         ...data,
         incomes: data.incomes.filter((inc) => inc.id !== id),
       });
     },
-    [data, persist]
+    [data, persistLocally]
   );
 
   // Expense actions
@@ -148,7 +247,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         ...expense,
         id: `exp-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       };
-      persist({
+      persistLocally({
         ...data,
         expenses: [...data.expenses, newExp],
         settings: {
@@ -161,31 +260,46 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         },
       });
     },
-    [data, persist]
+    [data, persistLocally]
   );
 
   const updateExpense = useCallback(
     (expense: Expense) => {
-      persist({
+      persistLocally({
         ...data,
         expenses: data.expenses.map((exp) => (exp.id === expense.id ? expense : exp)),
       });
     },
-    [data, persist]
+    [data, persistLocally]
   );
 
   const deleteExpense = useCallback(
     (id: string) => {
-      persist({
+      const exp = data.expenses.find((e) => e.id === id);
+      if (exp) {
+        // Prevent deleting if it was paid in a closed month
+        const linkedToClosed = Object.keys(data.monthlyClosings || {}).some(
+          (m) => data.monthlyClosings?.[m]?.isClosed && exp.paidMonths?.[m]
+        );
+        if (linkedToClosed) {
+          console.warn('Esta despesa possui histórico em mês já fechado e não pode ser excluída.');
+          return;
+        }
+      }
+      persistLocally({
         ...data,
         expenses: data.expenses.filter((exp) => exp.id !== id),
       });
     },
-    [data, persist]
+    [data, persistLocally]
   );
 
   const toggleExpensePaid = useCallback(
     (expenseId: string, month: string) => {
+      if (isMonthClosed(month)) {
+        console.warn(`Mês ${month} está fechado. Operação bloqueada.`);
+        return;
+      }
       const updated = data.expenses.map((exp) => {
         if (exp.id === expenseId) {
           const current = !!exp.paidMonths?.[month];
@@ -199,9 +313,9 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         }
         return exp;
       });
-      persist({ ...data, expenses: updated });
+      persistLocally({ ...data, expenses: updated });
     },
-    [data, persist]
+    [data, isMonthClosed, persistLocally]
   );
 
   const toggleExpenseReview = useCallback(
@@ -212,82 +326,117 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         }
         return exp;
       });
-      persist({ ...data, expenses: updated });
+      persistLocally({ ...data, expenses: updated });
     },
-    [data, persist]
+    [data, persistLocally]
   );
 
   // Card Transaction actions
   const addCardTransaction = useCallback(
     (tx: Omit<CardTransaction, 'id'>) => {
+      const monthToCheck = tx.startMonth;
+      if (monthToCheck && isMonthClosed(monthToCheck)) {
+        console.warn(`Mês ${monthToCheck} está fechado. Operação bloqueada.`);
+        return;
+      }
       const newTx: CardTransaction = {
         ...tx,
         id: `tx-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       };
-      persist({ ...data, cardTransactions: [...data.cardTransactions, newTx] });
+      persistLocally({ ...data, cardTransactions: [...data.cardTransactions, newTx] });
     },
-    [data, persist]
+    [data, isMonthClosed, persistLocally]
   );
 
   const updateCardTransaction = useCallback(
     (tx: CardTransaction) => {
-      persist({
+      const monthToCheck = tx.startMonth;
+      if (monthToCheck && isMonthClosed(monthToCheck)) {
+        console.warn(`Mês ${monthToCheck} está fechado. Operação bloqueada.`);
+        return;
+      }
+      persistLocally({
         ...data,
         cardTransactions: data.cardTransactions.map((t) => (t.id === tx.id ? tx : t)),
       });
     },
-    [data, persist]
+    [data, isMonthClosed, persistLocally]
   );
 
   const deleteCardTransaction = useCallback(
     (id: string) => {
-      persist({
+      const tx = data.cardTransactions.find((t) => t.id === id);
+      const monthToCheck = tx?.startMonth;
+      if (monthToCheck && isMonthClosed(monthToCheck)) {
+        console.warn(`Mês ${monthToCheck} está fechado. Operação bloqueada.`);
+        return;
+      }
+      persistLocally({
         ...data,
         cardTransactions: data.cardTransactions.filter((t) => t.id !== id),
       });
     },
-    [data, persist]
+    [data, isMonthClosed, persistLocally]
   );
 
   const toggleCardTransactionReview = useCallback(
     (id: string) => {
-      persist({
+      persistLocally({
         ...data,
         cardTransactions: data.cardTransactions.map((t) =>
           t.id === id ? { ...t, needsReview: !t.needsReview } : t
         ),
       });
     },
-    [data, persist]
+    [data, persistLocally]
   );
 
   const setCardRealInvoice = useCallback(
-    (cardId: string, month: string, realTotal: number | undefined) => {
+    (cardId: string, month: string, realTotal: number | undefined, paymentDate?: string) => {
+      if (isMonthClosed(month)) {
+        console.warn(`Mês ${month} está fechado. Operação bloqueada.`);
+        return;
+      }
       const updatedCards = data.creditCards.map((card) => {
         if (card.id === cardId) {
           const currentMap = { ...(card.realInvoiceTotalByMonth || {}) };
+          const dateMap = { ...(card.invoicePaymentDateByMonth || {}) };
+
           if (realTotal === undefined || isNaN(realTotal) || realTotal <= 0) {
             delete currentMap[month];
           } else {
             currentMap[month] = realTotal;
           }
-          return { ...card, realInvoiceTotalByMonth: currentMap };
+
+          if (paymentDate) {
+            dateMap[month] = paymentDate;
+          }
+
+          return {
+            ...card,
+            realInvoiceTotalByMonth: currentMap,
+            invoicePaymentDateByMonth: dateMap,
+          };
         }
         return card;
       });
-      persist({ ...data, creditCards: updatedCards });
+      persistLocally({ ...data, creditCards: updatedCards });
     },
-    [data, persist]
+    [data, isMonthClosed, persistLocally]
   );
 
-  // Variable Expense Logs
+  // Variable Expense Logs & Categories
   const addVariableExpenseLog = useCallback(
     (log: Omit<VariableExpenseLog, 'id'>) => {
+      if (isMonthClosed(log.month)) {
+        console.warn(`Mês ${log.month} está fechado. Operação bloqueada.`);
+        return;
+      }
       const newLog: VariableExpenseLog = {
         ...log,
         id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       };
-      persist({
+      persistLocally({
         ...data,
         variableExpenseLogs: [...data.variableExpenseLogs, newLog],
         settings: {
@@ -300,17 +449,63 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         },
       });
     },
-    [data, persist]
+    [data, isMonthClosed, persistLocally]
   );
 
   const deleteVariableExpenseLog = useCallback(
     (id: string) => {
-      persist({
+      const log = data.variableExpenseLogs.find((l) => l.id === id);
+      if (log && isMonthClosed(log.month)) {
+        console.warn(`Mês ${log.month} está fechado. Operação bloqueada.`);
+        return;
+      }
+      persistLocally({
         ...data,
         variableExpenseLogs: data.variableExpenseLogs.filter((l) => l.id !== id),
       });
     },
-    [data, persist]
+    [data, isMonthClosed, persistLocally]
+  );
+
+  const createBudgetCategory = useCallback(
+    (category: Omit<VariableBudgetCategory, 'id'>): string => {
+      const newId = `env-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`;
+      const newCategory: VariableBudgetCategory = {
+        ...category,
+        id: newId,
+      };
+      persistLocally({
+        ...data,
+        budgetEnvelopes: [...data.budgetEnvelopes, newCategory],
+      });
+      return newId;
+    },
+    [data, persistLocally]
+  );
+
+  const updateVariableExpenseLog = useCallback(
+    (log: VariableExpenseLog) => {
+      if (isMonthClosed(log.month)) {
+        console.warn(`Mês ${log.month} está fechado. Operação bloqueada.`);
+        return;
+      }
+      persistLocally({
+        ...data,
+        variableExpenseLogs: data.variableExpenseLogs.map((l) => (l.id === log.id ? log : l)),
+      });
+    },
+    [data, isMonthClosed, persistLocally]
+  );
+
+  const deleteBudgetEnvelope = useCallback(
+    (envelopeId: string) => {
+      persistLocally({
+        ...data,
+        budgetEnvelopes: data.budgetEnvelopes.filter((e) => e.id !== envelopeId),
+        variableExpenseLogs: data.variableExpenseLogs.filter((l) => l.categoryId !== envelopeId),
+      });
+    },
+    [data, persistLocally]
   );
 
   const updateBudgetEnvelopeTarget = useCallback(
@@ -318,15 +513,336 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       const updated = data.budgetEnvelopes.map((env) =>
         env.id === envelopeId ? { ...env, targetAmount: newTarget } : env
       );
-      persist({ ...data, budgetEnvelopes: updated });
+      persistLocally({ ...data, budgetEnvelopes: updated });
     },
-    [data, persist]
+    [data, persistLocally]
+  );
+
+  const updateBudgetEnvelope = useCallback(
+    (envelopeId: string, name: string, targetAmount: number) => {
+      const updated = data.budgetEnvelopes.map((env) =>
+        env.id === envelopeId
+          ? { ...env, name: name.trim() || env.name, targetAmount: Math.max(0, targetAmount) }
+          : env
+      );
+      persistLocally({ ...data, budgetEnvelopes: updated });
+    },
+    [data, persistLocally]
+  );
+
+  // Add or increment expense (allowing existing categories to accumulate and creating new category lines)
+  const addOrIncrementExpense = useCallback(
+    (params: {
+      title: string;
+      amount: number;
+      category: string;
+      scope: 'PF' | 'PJ';
+      month: string;
+      frequency: ExpenseFrequency;
+      installmentsCount?: number;
+      notes?: string;
+      targetEnvelopeAmount?: number;
+    }) => {
+      if (isMonthClosed(params.month)) {
+        console.warn(`Mês ${params.month} está fechado. Operação bloqueada.`);
+        return;
+      }
+      const {
+        title,
+        amount,
+        category,
+        scope,
+        month,
+        frequency,
+        installmentsCount,
+        notes,
+        targetEnvelopeAmount,
+      } = params;
+
+      // Check if this belongs to an envelope/variable category or fixed/installment expense
+      let updatedEnvelopes = [...data.budgetEnvelopes];
+      let existingEnv = updatedEnvelopes.find(
+        (e) => e.name.trim().toLowerCase() === category.trim().toLowerCase()
+      );
+
+      // If category doesn't exist as envelope yet, create it!
+      let categoryId = existingEnv?.id;
+      if (!existingEnv) {
+        categoryId = `env-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`;
+        const newEnv: VariableBudgetCategory = {
+          id: categoryId,
+          name: category,
+          targetAmount: targetEnvelopeAmount || amount,
+        };
+        updatedEnvelopes.push(newEnv);
+      }
+
+      // If frequency is single/variable or matches an envelope, log it as a detailed variable expense entry
+      // This guarantees each launch is individually discriminated, while the envelope total sums up!
+      if (frequency === 'single') {
+        const newLog: VariableExpenseLog = {
+          id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          categoryId: categoryId!,
+          month,
+          amount,
+          description: title,
+          date: new Date().toISOString().slice(0, 10),
+        };
+
+        persistLocally({
+          ...data,
+          budgetEnvelopes: updatedEnvelopes,
+          variableExpenseLogs: [...data.variableExpenseLogs, newLog],
+          settings: {
+            ...data.settings,
+            lastExpenseLogged: {
+              description: title,
+              amount,
+              timestamp: new Date().toISOString(),
+            },
+          },
+        });
+      } else {
+        // Fixed or installment expense: add as a distinct expense under this category
+        const newExp: Expense = {
+          id: `exp-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          title,
+          amount,
+          scope,
+          category,
+          frequency,
+          startMonth: month,
+          installmentsCount: frequency === 'installment' ? installmentsCount || 12 : undefined,
+          notes,
+        };
+
+        persistLocally({
+          ...data,
+          budgetEnvelopes: updatedEnvelopes,
+          expenses: [...data.expenses, newExp],
+          settings: {
+            ...data.settings,
+            lastExpenseLogged: {
+              description: title,
+              amount,
+              timestamp: new Date().toISOString(),
+            },
+          },
+        });
+      }
+    },
+    [data, persistLocally]
+  );
+
+  // Month locking & Closing
+  const closeMonth = useCallback(
+    (month: string) => {
+      const currentClosings = { ...(data.monthlyClosings || {}) };
+      const existing = currentClosings[month];
+      currentClosings[month] = {
+        month,
+        closingRealBalance: existing?.closingRealBalance || 0,
+        projectedBalance: existing?.projectedBalance || 0,
+        adjustmentDifference: existing?.adjustmentDifference || 0,
+        isOverdraft: !!existing?.isOverdraft,
+        scheduledReminders: existing?.scheduledReminders || [],
+        pushedDebts: existing?.pushedDebts || [],
+        notes: existing?.notes || '',
+        isClosed: true,
+        closedAt: existing?.closedAt || new Date().toISOString(),
+      };
+      persistLocally({ ...data, monthlyClosings: currentClosings });
+
+    },
+    [data, persistLocally]
+  );
+
+  const reopenMonth = useCallback(
+    (month: string, reason?: string) => {
+      const currentClosings = { ...(data.monthlyClosings || {}) };
+      const existing = currentClosings[month];
+      if (existing) {
+        const reopenText = reason?.trim() || 'Ajustes solicitados pelo usuário';
+        const historyEntry = {
+          reason: reopenText,
+          timestamp: new Date().toISOString(),
+        };
+        currentClosings[month] = {
+          ...existing,
+          isClosed: false,
+          reopenedReason: reopenText,
+          reopenedAt: new Date().toISOString(),
+          reopenHistory: [...(existing.reopenHistory || []), historyEntry],
+        };
+        persistLocally({ ...data, monthlyClosings: currentClosings });
+      }
+    },
+    [data, persistLocally]
+  );
+
+  const saveBankStatementResult = useCallback(
+    (month: string, statement: BankStatementUploadRecord, applyBalanceToClosing: boolean) => {
+      const currentClosings = { ...(data.monthlyClosings || {}) };
+      const closing = currentClosings[month] || {
+        month,
+        closingRealBalance: statement.finalBalance,
+        projectedBalance: 0,
+        adjustmentDifference: 0,
+        isOverdraft: statement.finalBalance < 0,
+        scheduledReminders: [],
+        pushedDebts: [],
+      };
+
+      const existingUploads = closing.bankStatementsUploaded || [];
+      const updatedUploads = [...existingUploads, statement];
+
+      currentClosings[month] = {
+        ...closing,
+        closingRealBalance: applyBalanceToClosing ? statement.finalBalance : closing.closingRealBalance,
+        isOverdraft: applyBalanceToClosing ? statement.finalBalance < 0 : closing.isOverdraft,
+        bankStatementsUploaded: updatedUploads,
+      };
+
+      persistLocally({ ...data, monthlyClosings: currentClosings });
+    },
+    [data, persistLocally]
+  );
+
+  // Monthly Closing Actions
+  const saveMonthlyClosing = useCallback(
+    (record: MonthlyClosingRecord) => {
+      const currentClosings = { ...(data.monthlyClosings || {}) };
+      currentClosings[record.month] = {
+        ...record,
+        closedAt: new Date().toISOString(),
+      };
+      persistLocally({
+        ...data,
+        monthlyClosings: currentClosings,
+      });
+    },
+    [data, persistLocally]
+  );
+
+
+  const scheduleBillPayment = useCallback(
+    (
+      expenseId: string,
+      expenseTitle: string,
+      amount: number,
+      month: string,
+      scheduledDate: string
+    ) => {
+      const currentClosings = { ...(data.monthlyClosings || {}) };
+      const closing = currentClosings[month] || {
+        month,
+        closingRealBalance: 0,
+        projectedBalance: 0,
+        adjustmentDifference: 0,
+        isOverdraft: false,
+        scheduledReminders: [],
+        pushedDebts: [],
+      };
+
+      const newReminder: ScheduledBillReminder = {
+        id: `rem-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        expenseId,
+        expenseTitle,
+        amount,
+        scheduledDate,
+        month,
+        status: 'scheduled',
+        createdAt: new Date().toISOString(),
+      };
+
+      currentClosings[month] = {
+        ...closing,
+        scheduledReminders: [...closing.scheduledReminders.filter((r) => r.expenseId !== expenseId), newReminder],
+      };
+
+      persistLocally({
+        ...data,
+        monthlyClosings: currentClosings,
+      });
+    },
+    [data, persistLocally]
+  );
+
+  const pushBillDebt = useCallback(
+    (expenseId: string, expenseTitle: string, amount: number, month: string, reason?: string) => {
+      const currentClosings = { ...(data.monthlyClosings || {}) };
+      const closing = currentClosings[month] || {
+        month,
+        closingRealBalance: 0,
+        projectedBalance: 0,
+        adjustmentDifference: 0,
+        isOverdraft: false,
+        scheduledReminders: [],
+        pushedDebts: [],
+      };
+
+      const newPushed: PushedDebtBill = {
+        id: `push-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        expenseId,
+        expenseTitle,
+        amount,
+        month,
+        pushedAt: new Date().toISOString(),
+        reason: reason || 'Empurrado para pagamento posterior',
+        status: 'pushed',
+      };
+
+      currentClosings[month] = {
+        ...closing,
+        pushedDebts: [...closing.pushedDebts.filter((p) => p.expenseId !== expenseId), newPushed],
+      };
+
+      persistLocally({
+        ...data,
+        monthlyClosings: currentClosings,
+      });
+    },
+    [data, persistLocally]
+  );
+
+  const resolveScheduledReminder = useCallback(
+    (month: string, reminderId: string) => {
+      const currentClosings = { ...(data.monthlyClosings || {}) };
+      const closing = currentClosings[month];
+      if (!closing) return;
+
+      currentClosings[month] = {
+        ...closing,
+        scheduledReminders: closing.scheduledReminders.map((r) =>
+          r.id === reminderId ? { ...r, status: 'paid' } : r
+        ),
+      };
+      persistLocally({ ...data, monthlyClosings: currentClosings });
+    },
+    [data, persistLocally]
+  );
+
+  const resolvePushedDebt = useCallback(
+    (month: string, pushedDebtId: string) => {
+      const currentClosings = { ...(data.monthlyClosings || {}) };
+      const closing = currentClosings[month];
+      if (!closing) return;
+
+      currentClosings[month] = {
+        ...closing,
+        pushedDebts: closing.pushedDebts.map((p) =>
+          p.id === pushedDebtId ? { ...p, status: 'paid' } : p
+        ),
+      };
+      persistLocally({ ...data, monthlyClosings: currentClosings });
+    },
+    [data, persistLocally]
   );
 
   const toggleChecklistStep = useCallback(
     (stepId: string) => {
       const current = !!data.settings.checklistState?.[stepId];
-      persist({
+      persistLocally({
         ...data,
         settings: {
           ...data.settings,
@@ -337,7 +853,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         },
       });
     },
-    [data, persist]
+    [data, persistLocally]
   );
 
   // CSV Import approval
@@ -346,7 +862,8 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       cardId: string,
       invoiceMonth: string,
       items: CsvParsedItem[],
-      updateRealInvoice: boolean
+      updateRealInvoice: boolean,
+      paymentDate?: string
     ) => {
       const approvedItems = items.filter((item) => item.selected);
       const newTransactions = approvedItems.map((item) =>
@@ -354,35 +871,43 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       );
 
       let updatedCards = [...data.creditCards];
-      if (updateRealInvoice) {
+      if (updateRealInvoice || paymentDate) {
         const totalApproved = approvedItems.reduce((acc, curr) => acc + curr.amount, 0);
         updatedCards = updatedCards.map((c) => {
           if (c.id === cardId) {
+            const realMap = { ...(c.realInvoiceTotalByMonth || {}) };
+            const dateMap = { ...(c.invoicePaymentDateByMonth || {}) };
+
+            if (updateRealInvoice) {
+              realMap[invoiceMonth] = totalApproved;
+            }
+            if (paymentDate) {
+              dateMap[invoiceMonth] = paymentDate;
+            }
+
             return {
               ...c,
-              realInvoiceTotalByMonth: {
-                ...(c.realInvoiceTotalByMonth || {}),
-                [invoiceMonth]: totalApproved,
-              },
+              realInvoiceTotalByMonth: realMap,
+              invoicePaymentDateByMonth: dateMap,
             };
           }
           return c;
         });
       }
 
-      persist({
+      persistLocally({
         ...data,
         creditCards: updatedCards,
         cardTransactions: [...data.cardTransactions, ...newTransactions],
       });
     },
-    [data, persist]
+    [data, persistLocally]
   );
 
   // Settings & Backups
   const updateSettings = useCallback(
     (settings: Partial<AppSettings>) => {
-      persist({
+      persistLocally({
         ...data,
         settings: {
           ...data.settings,
@@ -390,22 +915,22 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         },
       });
     },
-    [data, persist]
+    [data, persistLocally]
   );
 
   const restoreSeedData = useCallback(() => {
-    persist(INITIAL_SEED_DATA);
+    persistLocally(INITIAL_SEED_DATA);
     setSelectedMonth('2025-12');
-  }, [persist]);
+  }, [persistLocally]);
 
   const importBackupData = useCallback(
     (newData: AppData) => {
-      persist(newData);
+      persistLocally(newData);
       if (newData.settings.startMonth) {
         setSelectedMonth(newData.settings.startMonth);
       }
     },
-    [persist]
+    [persistLocally]
   );
 
   const saveFirebaseSettings = useCallback(
@@ -415,9 +940,80 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       const result = await loadAppData();
       setData(result.data);
       setIsUsingFirebase(result.isUsingFirebase);
+      setHasUnsavedChanges(false);
       setLoading(false);
     },
     []
+  );
+
+  // Banks & Cards Management
+  const addBankAccount = useCallback(
+    (bank: Omit<BankAccountConfig, 'id'>) => {
+      const newBank: BankAccountConfig = {
+        ...bank,
+        id: `bank-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+      };
+      persistLocally({
+        ...data,
+        bankAccounts: [...(data.bankAccounts || []), newBank],
+      });
+    },
+    [data, persistLocally]
+  );
+
+  const updateBankAccount = useCallback(
+    (bank: BankAccountConfig) => {
+      persistLocally({
+        ...data,
+        bankAccounts: (data.bankAccounts || []).map((b) => (b.id === bank.id ? bank : b)),
+      });
+    },
+    [data, persistLocally]
+  );
+
+  const deleteBankAccount = useCallback(
+    (id: string) => {
+      persistLocally({
+        ...data,
+        bankAccounts: (data.bankAccounts || []).filter((b) => b.id !== id),
+      });
+    },
+    [data, persistLocally]
+  );
+
+  const addCreditCard = useCallback(
+    (card: Omit<CreditCard, 'id'>) => {
+      const newCard: CreditCard = {
+        ...card,
+        id: `card-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+      };
+      persistLocally({
+        ...data,
+        creditCards: [...data.creditCards, newCard],
+      });
+    },
+    [data, persistLocally]
+  );
+
+  const updateCreditCard = useCallback(
+    (card: CreditCard) => {
+      persistLocally({
+        ...data,
+        creditCards: data.creditCards.map((c) => (c.id === card.id ? card : c)),
+      });
+    },
+    [data, persistLocally]
+  );
+
+  const deleteCreditCard = useCallback(
+    (id: string) => {
+      persistLocally({
+        ...data,
+        creditCards: data.creditCards.filter((c) => c.id !== id),
+        cardTransactions: data.cardTransactions.filter((tx) => tx.cardId !== id),
+      });
+    },
+    [data, persistLocally]
   );
 
   return (
@@ -426,6 +1022,8 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         data,
         loading,
         isUsingFirebase,
+        hasUnsavedChanges,
+        isSavingToFirebase,
         selectedMonth,
         setSelectedMonth,
         scopeFilter,
@@ -434,6 +1032,8 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         setActiveTab,
         summaries,
         currentMonthSummary,
+        saveToFirebase,
+        discardUnsavedChanges,
         addIncome,
         updateIncome,
         deleteIncome,
@@ -448,8 +1048,30 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         toggleCardTransactionReview,
         setCardRealInvoice,
         addVariableExpenseLog,
+        updateVariableExpenseLog,
         deleteVariableExpenseLog,
+        createBudgetCategory,
         updateBudgetEnvelopeTarget,
+        updateBudgetEnvelope,
+        deleteBudgetEnvelope,
+        addOrIncrementExpense,
+        isMonthClosed,
+        closeMonth,
+        reopenMonth,
+        saveMonthlyClosing,
+        saveBankStatementResult,
+        scheduleBillPayment,
+        pushBillDebt,
+        resolveScheduledReminder,
+        resolvePushedDebt,
+
+        addBankAccount,
+        updateBankAccount,
+        deleteBankAccount,
+        addCreditCard,
+        updateCreditCard,
+        deleteCreditCard,
+
         importCsvTransactions,
         toggleChecklistStep,
         updateSettings,

@@ -35,6 +35,11 @@ export const CsvImportModal: React.FC<CsvImportModalProps> = ({ isOpen, onClose 
     data.creditCards[0]?.id || ''
   );
   const [targetMonth, setTargetMonth] = useState<string>(selectedMonth);
+  const selectedCard = data.creditCards.find((c) => c.id === selectedCardId) || data.creditCards[0];
+  const defaultDueDay = selectedCard?.dueDay || 10;
+  const [paymentDate, setPaymentDate] = useState<string>(
+    `${selectedMonth}-${String(defaultDueDay).padStart(2, '0')}`
+  );
   const [parsedItems, setParsedItems] = useState<CsvParsedItem[]>([]);
   const [fileName, setFileName] = useState<string>('');
   const [updateRealInvoice, setUpdateRealInvoice] = useState<boolean>(true);
@@ -119,7 +124,7 @@ export const CsvImportModal: React.FC<CsvImportModalProps> = ({ isOpen, onClose 
 
   const handleApprove = () => {
     if (!selectedCardId || selectedCount === 0) return;
-    importCsvTransactions(selectedCardId, targetMonth, parsedItems, updateRealInvoice);
+    importCsvTransactions(selectedCardId, targetMonth, parsedItems, updateRealInvoice, paymentDate);
     onClose();
   };
 
@@ -178,8 +183,8 @@ export const CsvImportModal: React.FC<CsvImportModalProps> = ({ isOpen, onClose 
         {/* Modal Body */}
         <div className="p-5 overflow-y-auto space-y-5 flex-1 text-xs">
           
-          {/* Card & Month Selector */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 rounded-xl bg-zinc-900/60 border border-zinc-800 text-xs">
+          {/* Card & Month & Payment Date Selector */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-4 rounded-xl bg-zinc-900/60 border border-zinc-800 text-xs">
             <div className="space-y-1">
               <label className="font-semibold text-zinc-300 flex items-center gap-1.5">
                 <CreditCard className="w-3.5 h-3.5 text-indigo-400" />
@@ -187,7 +192,13 @@ export const CsvImportModal: React.FC<CsvImportModalProps> = ({ isOpen, onClose 
               </label>
               <select
                 value={selectedCardId}
-                onChange={(e) => setSelectedCardId(e.target.value)}
+                onChange={(e) => {
+                  setSelectedCardId(e.target.value);
+                  const newCard = data.creditCards.find((c) => c.id === e.target.value);
+                  if (newCard) {
+                    setPaymentDate(`${targetMonth}-${String(newCard.dueDay).padStart(2, '0')}`);
+                  }
+                }}
                 className="w-full px-3 py-2 rounded-lg bg-zinc-950 border border-zinc-700 text-white outline-none focus:border-emerald-500 transition"
               >
                 {data.creditCards.map((card) => (
@@ -205,7 +216,12 @@ export const CsvImportModal: React.FC<CsvImportModalProps> = ({ isOpen, onClose 
               </label>
               <select
                 value={targetMonth}
-                onChange={(e) => setTargetMonth(e.target.value)}
+                onChange={(e) => {
+                  setTargetMonth(e.target.value);
+                  const newCard = data.creditCards.find((c) => c.id === selectedCardId);
+                  const dueDay = newCard?.dueDay || 10;
+                  setPaymentDate(`${e.target.value}-${String(dueDay).padStart(2, '0')}`);
+                }}
                 className="w-full px-3 py-2 rounded-lg bg-zinc-950 border border-zinc-700 text-white outline-none focus:border-emerald-500 transition"
               >
                 {summaries.map((s) => (
@@ -214,6 +230,19 @@ export const CsvImportModal: React.FC<CsvImportModalProps> = ({ isOpen, onClose 
                   </option>
                 ))}
               </select>
+            </div>
+
+            <div className="space-y-1">
+              <label className="font-semibold text-zinc-300 block">
+                Data de Vencimento / Pgto
+              </label>
+              <input
+                type="date"
+                required
+                value={paymentDate}
+                onChange={(e) => setPaymentDate(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg bg-zinc-950 border border-zinc-700 text-white outline-none focus:border-emerald-500 transition font-mono-numbers"
+              />
             </div>
           </div>
 

@@ -147,7 +147,13 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
                           : 'text-zinc-300 hover:bg-zinc-800/60'
                       }`}
                     >
-                      <div className="text-[11px] font-semibold">{s.label}</div>
+                      <div className="text-[11px] font-semibold flex items-center justify-end gap-1">
+                        <span>{s.label}</span>
+                        {data.monthlyClosings?.[s.month]?.isClosed && (
+                          <span title="Mês Fechado e Bloqueado" className="text-[10px]">🔒</span>
+                        )}
+                      </div>
+
                       <div
                         className={`text-[10px] font-mono-numbers mt-0.5 ${
                           s.finalBalance >= 0 ? 'text-emerald-400' : 'text-rose-400'
