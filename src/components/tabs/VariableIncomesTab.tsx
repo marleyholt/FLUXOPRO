@@ -8,6 +8,7 @@ import {
   Filter,
   CheckCircle,
   Sparkles,
+  Repeat,
 } from 'lucide-react';
 import { useFinance } from '../../context/FinanceContext';
 import { formatBRL, getMonthLabel } from '../../utils/calculations';
@@ -23,23 +24,46 @@ export const VariableIncomesTab: React.FC<VariableIncomesTabProps> = ({
 
   const [title, setTitle] = useState('');
   const [amount, setAmount] = useState('');
-  const [category, setCategory] = useState('Extra / Projetos');
+  const [category, setCategory] = useState('Salário / Recorrente');
   const [scope, setScope] = useState<'PF' | 'PJ'>('PF');
   const [source, setSource] = useState<'Carol' | 'Filipe' | 'custom'>('Filipe');
   const [customSource, setCustomSource] = useState('');
-  const [month, setMonth] = useState(selectedMonth);
+  
+  // Tipo: 'fixed' (recorrente) ou 'variable' (pontual)
+  const [incomeType, setIncomeType] = useState<'fixed' | 'variable'>('fixed');
+  const [month, setMonth] = useState(selectedMonth); // para variável
+  const [startMonth, setStartMonth] = useState(selectedMonth); // para recorrente início
+  const [endMonth, setEndMonth] = useState(''); // para recorrente término (opcional)
   const [notes, setNotes] = useState('');
 
-  // All variable incomes
-  const variableIncomes = data.incomes.filter((inc) => inc.type === 'variable');
+  // Todas as receitas cadastradas
+  const allIncomes = data.incomes;
 
-  // Sum for selected month
-  const totalThisMonth = variableIncomes
-    .filter((inc) => inc.month === selectedMonth)
-    .reduce((acc, curr) => acc + curr.amount, 0);
+  // Total no mês selecionado (considerando fixas ativas e variáveis do mês)
+  let totalThisMonth = 0;
+  allIncomes.forEach((inc) => {
+    if (inc.type === 'fixed') {
+      const start = inc.startMonth || data.settings.startMonth;
+      const [y1, m1] = start.split('-').map(Number);
+      const [y2, m2] = selectedMonth.split('-').map(Number);
+      const diffStart = (y2 - y1) * 12 + (m2 - m1);
 
-  // Sum for full 12M period
-  const totalAllPeriod = variableIncomes.reduce((acc, curr) => acc + curr.amount, 0);
+      let matchesEnd = true;
+      if (inc.endMonth) {
+        const [ye, me] = inc.endMonth.split('-').map(Number);
+        const diffEnd = (ye - y2) * 12 + (me - m2);
+        if (diffEnd < 0) matchesEnd = false;
+      }
+
+      if (diffStart >= 0 && matchesEnd) {
+        totalThisMonth += inc.amount;
+      }
+    } else if (inc.type === 'variable') {
+      if (inc.month === selectedMonth) {
+        totalThisMonth += inc.amount;
+      }
+    }
+  });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -48,22 +72,37 @@ export const VariableIncomesTab: React.FC<VariableIncomesTabProps> = ({
 
     const resolvedSource = source === 'custom' ? customSource || 'Outro' : source;
 
-    addIncome({
-      title,
-      type: 'variable',
-      amount: parsedAmount,
-      category,
-      scope,
-      source: resolvedSource,
-      month,
-      notes,
-    });
+    if (incomeType === 'fixed') {
+      addIncome({
+        title,
+        type: 'fixed',
+        amount: parsedAmount,
+        category,
+        scope,
+        source: resolvedSource,
+        startMonth,
+        endMonth: endMonth.trim() ? endMonth : undefined,
+        notes,
+      });
+    } else {
+      addIncome({
+        title,
+        type: 'variable',
+        amount: parsedAmount,
+        category,
+        scope,
+        source: resolvedSource,
+        month,
+        notes,
+      });
+    }
 
     // Reset form
     setTitle('');
     setAmount('');
     setNotes('');
     setCustomSource('');
+    setEndMonth('');
   };
 
   return (
@@ -73,24 +112,18 @@ export const VariableIncomesTab: React.FC<VariableIncomesTabProps> = ({
         <div>
           <h2 className="text-base font-bold text-white flex items-center gap-2">
             <Layers className="w-4 h-4 text-emerald-400" />
-            Receitas Variáveis & Lançamentos Extras
+            Central de Receitas (Salários, Recorrentes & Variáveis)
           </h2>
           <p className="text-xs text-zinc-400">
-            Substitui a antiga aba secundária de SUMIFS da planilha. Registre bônus, 13º, projetos e consultorias avulsas.
+            Cadastre receitas recorrentes (como salário, adicionando uma vez e definindo até qual mês considerar) ou receitas pontuais/variáveis.
           </p>
         </div>
 
         <div className="flex items-center gap-4 text-xs">
           <div className="px-3 py-1.5 rounded-lg bg-zinc-950 border border-zinc-800">
-            <span className="text-zinc-400 block text-[10px]">No Mês Selecionado:</span>
+            <span className="text-zinc-400 block text-[10px]">No Mês Selecionado ({selectedMonth}):</span>
             <span className="font-mono-numbers font-bold text-emerald-400 text-sm">
               {formatBRL(totalThisMonth)}
-            </span>
-          </div>
-          <div className="px-3 py-1.5 rounded-lg bg-zinc-950 border border-zinc-800">
-            <span className="text-zinc-400 block text-[10px]">Total Projetado 12M:</span>
-            <span className="font-mono-numbers font-bold text-zinc-200 text-sm">
-              {formatBRL(totalAllPeriod)}
             </span>
           </div>
         </div>
@@ -106,15 +139,44 @@ export const VariableIncomesTab: React.FC<VariableIncomesTabProps> = ({
           >
             <h3 className="text-sm font-bold text-white flex items-center gap-2 border-b border-zinc-800 pb-2">
               <Plus className="w-4 h-4 text-emerald-400" />
-              Lançar Nova Receita Extra
+              Adicionar Nova Receita
             </h3>
+
+            {/* Tipo de Receita: Recorrente vs Variável */}
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-zinc-300">Tipo de Receita</label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIncomeType('fixed')}
+                  className={`py-2 rounded-lg text-xs font-bold border transition ${
+                    incomeType === 'fixed'
+                      ? 'bg-emerald-500 text-zinc-950 border-emerald-400 shadow-sm'
+                      : 'bg-zinc-950 text-zinc-400 border-zinc-800 hover:text-white'
+                  }`}
+                >
+                  🔄 Recorrente (Fixa)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIncomeType('variable')}
+                  className={`py-2 rounded-lg text-xs font-bold border transition ${
+                    incomeType === 'variable'
+                      ? 'bg-emerald-500 text-zinc-950 border-emerald-400 shadow-sm'
+                      : 'bg-zinc-950 text-zinc-400 border-zinc-800 hover:text-white'
+                  }`}
+                >
+                  ⚡ Pontual (Variável)
+                </button>
+              </div>
+            </div>
 
             <div className="space-y-1">
               <label className="text-xs font-medium text-zinc-300">Descrição / Título</label>
               <input
                 type="text"
                 required
-                placeholder="Ex: Projeto Freelance TI, Restituição IR..."
+                placeholder={incomeType === 'fixed' ? 'Ex: Salário CLT, Aluguel Recebido...' : 'Ex: Bônus, Freelance, 13º...'}
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 className="w-full px-3 py-2 rounded-lg bg-zinc-950 border border-zinc-800 text-xs text-white placeholder-zinc-500 outline-none focus:border-emerald-500 transition"
@@ -123,7 +185,7 @@ export const VariableIncomesTab: React.FC<VariableIncomesTabProps> = ({
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <label className="text-xs font-medium text-zinc-300">Valor (R$)</label>
+                <label className="text-xs font-medium text-zinc-300">Valor Mensal (R$)</label>
                 <input
                   type="number"
                   step="0.01"
@@ -136,207 +198,173 @@ export const VariableIncomesTab: React.FC<VariableIncomesTabProps> = ({
               </div>
 
               <div className="space-y-1">
-                <label className="text-xs font-medium text-zinc-300">Mês da Entrada</label>
+                <label className="text-xs font-medium text-zinc-300">Escopo</label>
+                <select
+                  value={scope}
+                  onChange={(e) => setScope(e.target.value as 'PF' | 'PJ')}
+                  className="w-full px-2.5 py-2 rounded-lg bg-zinc-950 border border-zinc-800 text-xs text-white outline-none focus:border-emerald-500 transition"
+                >
+                  <option value="PF">Pessoa Física (PF)</option>
+                  <option value="PJ">Pessoa Jurídica (PJ)</option>
+                </select>
+              </div>
+            </div>
+
+            {incomeType === 'fixed' ? (
+              <div className="space-y-3 p-3 rounded-xl bg-zinc-950 border border-zinc-800">
+                <div className="space-y-1">
+                  <label className="text-[11px] font-medium text-zinc-300">Mês Inicial (Quando começa)</label>
+                  <select
+                    value={startMonth}
+                    onChange={(e) => setStartMonth(e.target.value)}
+                    className="w-full px-2.5 py-1.5 rounded-lg bg-zinc-900 border border-zinc-700 text-xs text-white outline-none focus:border-emerald-500 font-mono-numbers"
+                  >
+                    {summaries.map((s) => (
+                      <option key={s.month} value={s.month}>
+                        {s.label} ({s.month})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[11px] font-medium text-zinc-300">Mês Final (Até quando considerar)</label>
+                  <select
+                    value={endMonth}
+                    onChange={(e) => setEndMonth(e.target.value)}
+                    className="w-full px-2.5 py-1.5 rounded-lg bg-zinc-900 border border-zinc-700 text-xs text-white outline-none focus:border-emerald-500 font-mono-numbers"
+                  >
+                    <option value="">Indefinido / Sem Limite (Perpétuo)</option>
+                    {summaries.map((s) => (
+                      <option key={s.month} value={s.month}>
+                        {s.label} ({s.month})
+                      </option>
+                    ))}
+                  </select>
+                  <span className="text-[10px] text-zinc-500 block">Deixe em branco se for recorrente contínua.</span>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-zinc-300">Mês da Entrada Pontual</label>
                 <select
                   value={month}
                   onChange={(e) => setMonth(e.target.value)}
-                  className="w-full px-2.5 py-2 rounded-lg bg-zinc-950 border border-zinc-800 text-xs text-white outline-none focus:border-emerald-500 transition"
+                  className="w-full px-2.5 py-2 rounded-lg bg-zinc-950 border border-zinc-800 text-xs text-white outline-none focus:border-emerald-500 transition font-mono-numbers"
                 >
                   {summaries.map((s) => (
                     <option key={s.month} value={s.month}>
-                      {s.label}
+                      {s.label} ({s.month})
                     </option>
                   ))}
                 </select>
               </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <label className="text-xs font-medium text-zinc-300">Categoria</label>
-                <select
-                  value={category}
-                  onChange={(e) => setCategory(e.target.value)}
-                  className="w-full px-2.5 py-2 rounded-lg bg-zinc-950 border border-zinc-800 text-xs text-white outline-none focus:border-emerald-500 transition"
-                >
-                  <option value="Extra / Projetos">Extra / Projetos</option>
-                  <option value="13º Salário">13º Salário</option>
-                  <option value="PLR / Bonificação">PLR / Bonificação</option>
-                  <option value="Restituição IR">Restituição IR</option>
-                  <option value="Venda de Ativos">Venda de Ativos</option>
-                  <option value="Dividendos">Dividendos</option>
-                  <option value="Outros">Outros</option>
-                </select>
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs font-medium text-zinc-300">Escopo</label>
-                <div className="flex items-center gap-2 pt-1">
-                  <label className="flex items-center gap-1.5 text-xs text-zinc-300 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="scope"
-                      checked={scope === 'PF'}
-                      onChange={() => setScope('PF')}
-                      className="accent-emerald-500"
-                    />
-                    PF
-                  </label>
-                  <label className="flex items-center gap-1.5 text-xs text-zinc-300 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="scope"
-                      checked={scope === 'PJ'}
-                      onChange={() => setScope('PJ')}
-                      className="accent-emerald-500"
-                    />
-                    PJ
-                  </label>
-                </div>
-              </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-zinc-300">Fonte (Origem)</label>
-                  <div className="flex items-center gap-1.5 pt-1">
-                    <button
-                      type="button"
-                      onClick={() => setSource('Filipe')}
-                      className={`px-2 py-1 rounded text-[11px] font-semibold transition ${
-                        source === 'Filipe'
-                          ? 'bg-emerald-500 text-zinc-950 font-bold'
-                          : 'bg-zinc-800 text-zinc-400 hover:text-white'
-                      }`}
-                    >
-                      Filipe
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSource('Carol')}
-                      className={`px-2 py-1 rounded text-[11px] font-semibold transition ${
-                        source === 'Carol'
-                          ? 'bg-emerald-500 text-zinc-950 font-bold'
-                          : 'bg-zinc-800 text-zinc-400 hover:text-white'
-                      }`}
-                    >
-                      Carol
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSource('custom')}
-                      className={`px-2 py-1 rounded text-[11px] font-semibold transition ${
-                        source === 'custom'
-                          ? 'bg-emerald-500 text-zinc-950 font-bold'
-                          : 'bg-zinc-800 text-zinc-400 hover:text-white'
-                      }`}
-                    >
-                      + Outro
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {source === 'custom' && (
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-zinc-300">Nome da Fonte Personalizada</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="Ex: Empresa Externa, Dividendos..."
-                    value={customSource}
-                    onChange={(e) => setCustomSource(e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg bg-zinc-950 border border-zinc-800 text-xs text-white outline-none focus:border-emerald-500 transition"
-                  />
-                </div>
-              )}
+            )}
 
             <div className="space-y-1">
-              <label className="text-xs font-medium text-zinc-300">Observações (opcional)</label>
+              <label className="text-xs font-medium text-zinc-300">Categoria / Origem (Ex: Salário, Freelance)</label>
               <input
                 type="text"
-                placeholder="Ex: Recebimento previsto para o dia 20"
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
+                placeholder="Ex: Salário CLT, Consultoria..."
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
                 className="w-full px-3 py-2 rounded-lg bg-zinc-950 border border-zinc-800 text-xs text-white placeholder-zinc-500 outline-none focus:border-emerald-500 transition"
               />
             </div>
 
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-zinc-300">Responsável / Fonte</label>
+              <div className="flex gap-2">
+                <select
+                  value={source}
+                  onChange={(e) => setSource(e.target.value as any)}
+                  className="flex-1 px-2.5 py-2 rounded-lg bg-zinc-950 border border-zinc-800 text-xs text-white outline-none focus:border-emerald-500 transition"
+                >
+                  <option value="Filipe">Filipe</option>
+                  <option value="Carol">Carol</option>
+                  <option value="custom">Outro...</option>
+                </select>
+                {source === 'custom' && (
+                  <input
+                    type="text"
+                    placeholder="Nome"
+                    value={customSource}
+                    onChange={(e) => setCustomSource(e.target.value)}
+                    className="w-24 px-2 py-2 rounded-lg bg-zinc-950 border border-zinc-800 text-xs text-white outline-none focus:border-emerald-500"
+                  />
+                )}
+              </div>
+            </div>
+
             <button
               type="submit"
-              className="w-full py-2.5 rounded-xl text-xs font-bold bg-emerald-500 hover:bg-emerald-400 text-zinc-950 transition shadow-md shadow-emerald-500/20"
+              className="w-full py-2.5 rounded-xl font-bold bg-emerald-500 hover:bg-emerald-400 text-zinc-950 transition shadow-md shadow-emerald-500/20 text-xs"
             >
-              Adicionar Receita Variável
+              Cadastrar Receita
             </button>
           </form>
         </div>
 
-        {/* Incomes Table List (8 cols) */}
-        <div className="lg:col-span-8">
-          <div className="p-4 rounded-2xl bg-zinc-900/90 border border-zinc-800/80 shadow-sm space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                <TrendingUp className="w-4 h-4 text-emerald-400" />
-                Histórico de Entradas Variáveis ({variableIncomes.length})
-              </h3>
-            </div>
+        {/* List of Incomes (8 cols) */}
+        <div className="lg:col-span-8 space-y-4">
+          <div className="p-4 rounded-2xl bg-zinc-900/90 border border-zinc-800/80 space-y-3">
+            <h3 className="text-sm font-bold text-white flex items-center justify-between">
+              <span>Todas as Receitas Cadastradas ({allIncomes.length})</span>
+            </h3>
 
-            {variableIncomes.length === 0 ? (
-              <div className="p-8 text-center text-xs text-zinc-400 bg-zinc-950/60 rounded-xl border border-zinc-800">
-                Nenhuma receita variável cadastrada ainda.
+            {allIncomes.length === 0 ? (
+              <div className="p-8 rounded-xl bg-zinc-950 border border-zinc-800/80 text-center text-zinc-500 text-xs">
+                Nenhuma receita cadastrada. Adicione salários, rendas fixas ou bônus ao lado.
               </div>
             ) : (
-              <div className="border border-zinc-800 rounded-xl overflow-hidden bg-zinc-950">
-                <table className="w-full text-left border-collapse text-xs">
-                  <thead>
-                    <tr className="border-b border-zinc-800 bg-zinc-900/80 text-zinc-400 font-semibold">
-                      <th className="py-2.5 px-3">Mês</th>
-                      <th className="py-2.5 px-3">Descrição</th>
-                      <th className="py-2.5 px-3">Fonte</th>
-                      <th className="py-2.5 px-3">Categoria</th>
-                      <th className="py-2.5 px-3">Escopo</th>
-                      <th className="py-2.5 px-3 text-right">Valor</th>
-                      <th className="py-2.5 px-3 text-center">Ações</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-zinc-900">
-                    {variableIncomes.map((inc) => (
-                      <tr key={inc.id} className="hover:bg-zinc-900/40 text-zinc-300">
-                        <td className="py-2.5 px-3 font-semibold text-emerald-400">
-                          {inc.month ? getMonthLabel(inc.month) : '-'}
-                        </td>
-                        <td className="py-2.5 px-3 font-medium text-white">
-                          {inc.title}
-                          {inc.notes && (
-                            <span className="block text-[10px] text-zinc-400 italic">
-                              {inc.notes}
-                            </span>
-                          )}
-                        </td>
-                        <td className="py-2.5 px-3">
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 font-semibold">
-                            {inc.source || 'Filipe'}
+              <div className="space-y-2.5 max-h-[500px] overflow-y-auto pr-1">
+                {allIncomes.map((inc) => (
+                  <div
+                    key={inc.id}
+                    className="p-3.5 rounded-xl bg-zinc-950 border border-zinc-800 flex items-center justify-between gap-4 text-xs transition hover:border-zinc-700"
+                  >
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-white">{inc.title}</span>
+                        <span className="px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300 text-[10px] font-bold">
+                          {inc.scope}
+                        </span>
+                        {inc.type === 'fixed' ? (
+                          <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-bold border border-emerald-500/30 flex items-center gap-1">
+                            <Repeat className="w-3 h-3" /> Recorrente
                           </span>
-                        </td>
-                        <td className="py-2.5 px-3 text-zinc-400">{inc.category}</td>
-                        <td className="py-2.5 px-3">
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-300">
-                            {inc.scope}
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 text-[10px] font-bold border border-indigo-500/30">
+                            ⚡ Pontual ({inc.month})
                           </span>
-                        </td>
-                        <td className="py-2.5 px-3 text-right font-mono-numbers font-bold text-emerald-400">
-                          {formatBRL(inc.amount)}
-                        </td>
-                        <td className="py-2.5 px-3 text-center">
-                          <button
-                            onClick={() => deleteIncome(inc.id)}
-                            className="p-1 rounded text-zinc-400 hover:text-rose-400 transition"
-                            title="Excluir receita"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                        )}
+                      </div>
+
+                      <div className="text-[11px] text-zinc-400 flex items-center gap-3">
+                        <span>Categoria: <strong className="text-zinc-200">{inc.category}</strong></span>
+                        <span>Fonte: <strong className="text-zinc-200">{inc.source}</strong></span>
+                        {inc.type === 'fixed' && (
+                          <span>
+                            Período: <strong className="text-emerald-400">{inc.startMonth} até {inc.endMonth || 'Indefinido'}</strong>
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-4 shrink-0">
+                      <span className="font-mono-numbers font-extrabold text-emerald-400 text-sm">
+                        {formatBRL(inc.amount)}
+                      </span>
+                      <button
+                        onClick={() => deleteIncome(inc.id)}
+                        className="p-1.5 rounded-lg text-rose-400 hover:bg-rose-500/10 transition"
+                        title="Excluir receita"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </div>

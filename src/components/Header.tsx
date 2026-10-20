@@ -65,7 +65,7 @@ export const Header: React.FC<HeaderProps> = ({
     { id: 'matrix', label: 'Matriz Anual (Super Planilha)', icon: FileSpreadsheet },
     { id: 'monthly', label: 'Controle do Mês & Envelopes', icon: Calendar },
     { id: 'cards', label: 'Central de Cartões & Faturas', icon: CreditCard },
-    { id: 'variables', label: 'Receitas Variáveis', icon: Layers },
+    { id: 'variables', label: 'Receitas', icon: Layers },
   ] as const;
 
   return (

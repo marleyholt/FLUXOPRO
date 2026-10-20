@@ -67,7 +67,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'monthly', label: 'Previsão & Controle', icon: Calendar },
     { id: 'closing', label: 'Fechamento Mensal (30/31)', icon: CalendarCheck },
     { id: 'cards', label: 'Central de Cartões', icon: CreditCard },
-    { id: 'variables', label: 'Receitas Variáveis', icon: Layers },
+    { id: 'variables', label: 'Receitas', icon: Layers },
     { id: 'raiox', label: 'Raio-X Previsto vs Real', icon: PieChart },
     { id: 'simulation', label: 'Simulação & Juros', icon: Calculator },
     { id: 'config', label: 'Configurações', icon: Settings },

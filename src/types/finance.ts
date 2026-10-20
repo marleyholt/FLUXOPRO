@@ -11,6 +11,7 @@ export interface Income {
   scope: 'PF' | 'PJ';
   month?: string; // YYYY-MM for variable
   startMonth?: string; // YYYY-MM for fixed start
+  endMonth?: string; // YYYY-MM for fixed end (opcional)
   source?: string; // 'Carol' | 'Filipe' | string
   notes?: string;
 }

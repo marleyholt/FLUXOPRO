@@ -113,7 +113,9 @@ export function calculateForecast(
 
       if (inc.type === 'fixed') {
         const start = inc.startMonth || data.settings.startMonth;
-        if (getMonthDiff(start, month) >= 0) {
+        const diffFromStart = getMonthDiff(start, month);
+        const diffFromEnd = inc.endMonth ? getMonthDiff(month, inc.endMonth) : 0;
+        if (diffFromStart >= 0 && (!inc.endMonth || diffFromEnd >= 0)) {
           fixedIncome += inc.amount;
         }
       } else if (inc.type === 'variable') {
