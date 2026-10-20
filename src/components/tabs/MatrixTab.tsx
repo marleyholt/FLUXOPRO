@@ -4,6 +4,7 @@ import {
   ChevronRight,
   Plus,
   TrendingUp,
+  TrendingDown,
   CreditCard,
   Building2,
   Home,
@@ -36,6 +37,7 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
   const [openSections, setOpenSections] = useState({
     balance: true,
     incomes: true,
+    allExpenses: true,
     pj: true,
     pf: true,
     envelopes: true,
@@ -50,6 +52,7 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
     setOpenSections({
       balance: true,
       incomes: true,
+      allExpenses: true,
       pj: true,
       pf: true,
       envelopes: true,
@@ -61,6 +64,7 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
     setOpenSections({
       balance: true,
       incomes: false,
+      allExpenses: false,
       pj: false,
       pf: false,
       envelopes: false,
@@ -269,36 +273,68 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
                 </>
               )}
 
-              {/* 3. SEÇÃO: SAÍDAS PJ */}
-              {(scopeFilter === 'ALL' || scopeFilter === 'PJ') && (
-                <>
-                  <tr
-                    onClick={() => toggleSection('pj')}
-                    className="bg-zinc-900/60 hover:bg-zinc-900 cursor-pointer font-semibold text-zinc-200"
+              {/* 3. SEÇÃO PRINCIPAL DESTACADA: DESPESA TOTAL DO MÊS */}
+              <tr
+                onClick={() => toggleSection('allExpenses')}
+                className="bg-rose-950/40 hover:bg-rose-950/60 cursor-pointer font-bold border-y-2 border-rose-500/40 text-rose-200"
+              >
+                <td className="sticky left-0 z-10 bg-zinc-950 py-3 px-4 flex items-center justify-between shadow-[2px_0_5px_rgba(0,0,0,0.5)]">
+                  <div className="flex items-center gap-2 text-rose-400 font-extrabold text-xs tracking-wide">
+                    {openSections.allExpenses ? (
+                      <ChevronDown className="w-4 h-4" />
+                    ) : (
+                      <ChevronRight className="w-4 h-4" />
+                    )}
+                    <TrendingDown className="w-4 h-4" />
+                    <span>DESPESA TOTAL DO MÊS (TODAS AS SAÍDAS)</span>
+                  </div>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 font-bold">
+                    Consolidado
+                  </span>
+                </td>
+                {summaries.map((s) => (
+                  <td
+                    key={s.month}
+                    className="py-3 px-3 text-right font-mono-numbers font-extrabold text-rose-400 text-sm bg-rose-950/20"
                   >
-                    <td className="sticky left-0 z-10 bg-zinc-900/90 py-2.5 px-4 flex items-center justify-between shadow-[2px_0_5px_rgba(0,0,0,0.5)]">
-                      <div className="flex items-center gap-2 text-indigo-400 font-bold">
-                        {openSections.pj ? (
-                          <ChevronDown className="w-4 h-4" />
-                        ) : (
-                          <ChevronRight className="w-4 h-4" />
-                        )}
-                        <Building2 className="w-3.5 h-3.5" />
-                        <span>SAÍDAS PJ (EMPRESA)</span>
-                      </div>
-                      <span className="text-[10px] text-zinc-400 font-normal">
-                        {filteredPjExpenses.length} obrigações
-                      </span>
-                    </td>
-                    {summaries.map((s) => (
-                      <td
-                        key={s.month}
-                        className="py-2.5 px-3 text-right font-mono-numbers font-bold text-rose-300 bg-zinc-900/40"
+                    {formatBRL(s.totalExpenses)}
+                  </td>
+                ))}
+              </tr>
+
+              {/* Submenus da Despesa Total */}
+              {openSections.allExpenses && (
+                <>
+                  {/* 3.1 SUBMENU: SAÍDAS PJ */}
+                  {(scopeFilter === 'ALL' || scopeFilter === 'PJ') && (
+                    <>
+                      <tr
+                        onClick={() => toggleSection('pj')}
+                        className="bg-zinc-900/40 hover:bg-zinc-900 cursor-pointer font-semibold text-zinc-300 pl-4 border-l-2 border-indigo-500"
                       >
-                        {formatBRL(s.pjExpenses)}
-                      </td>
-                    ))}
-                  </tr>
+                        <td className="sticky left-0 z-10 bg-zinc-950 py-2.5 px-4 pl-8 flex items-center justify-between shadow-[2px_0_5px_rgba(0,0,0,0.5)]">
+                          <div className="flex items-center gap-2 text-indigo-400 font-semibold text-xs">
+                            {openSections.pj ? (
+                              <ChevronDown className="w-3.5 h-3.5" />
+                            ) : (
+                              <ChevronRight className="w-3.5 h-3.5" />
+                            )}
+                            <Building2 className="w-3.5 h-3.5" />
+                            <span>↳ Saídas PJ (Empresa)</span>
+                          </div>
+                          <span className="text-[10px] text-zinc-400 font-normal">
+                            {filteredPjExpenses.length} obrigações
+                          </span>
+                        </td>
+                        {summaries.map((s) => (
+                          <td
+                            key={s.month}
+                            className="py-2.5 px-3 text-right font-mono-numbers font-semibold text-rose-300 bg-zinc-900/30"
+                          >
+                            {formatBRL(s.pjExpenses)}
+                          </td>
+                        ))}
+                      </tr>
 
                   {openSections.pj &&
                     filteredPjExpenses.map((exp) => (
@@ -578,6 +614,8 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
                     })}
                   </tr>
                 ))}
+                </>
+              )}
 
             </tbody>
           </table>

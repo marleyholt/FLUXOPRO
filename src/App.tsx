@@ -5,20 +5,34 @@
 
 import React, { useState } from 'react';
 import { FinanceProvider, useFinance } from './context/FinanceContext';
-import { Header } from './components/Header';
+import { Sidebar } from './components/Sidebar';
 import { DashboardTab } from './components/tabs/DashboardTab';
 import { MatrixTab } from './components/tabs/MatrixTab';
 import { MonthlyControlTab } from './components/tabs/MonthlyControlTab';
 import { CardsTab } from './components/tabs/CardsTab';
 import { VariableIncomesTab } from './components/tabs/VariableIncomesTab';
+import { RaioXTab } from './components/tabs/RaioXTab';
 import { CsvImportModal } from './components/modals/CsvImportModal';
 import { NewTransactionModal } from './components/modals/NewTransactionModal';
 import { QuickExpenseModal } from './components/modals/QuickExpenseModal';
 import { RealInvoiceModal } from './components/modals/RealInvoiceModal';
 import { FirebaseBackupModal } from './components/modals/FirebaseBackupModal';
+import { RoutineChecklistModal } from './components/modals/RoutineChecklistModal';
+import { GitHubModal } from './components/modals/GitHubModal';
+import { Menu, PlusCircle, Upload, CheckSquare, GitBranch, Calendar } from 'lucide-react';
+import { formatBRL } from './utils/calculations';
 
 function MainApp() {
-  const { activeTab, loading } = useFinance();
+  const {
+    activeTab,
+    loading,
+    selectedMonth,
+    setSelectedMonth,
+    summaries,
+    currentMonthSummary,
+  } = useFinance();
+
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
   // Modals state
   const [isCsvModalOpen, setIsCsvModalOpen] = useState(false);
@@ -28,6 +42,8 @@ function MainApp() {
   const [isRealInvoiceModalOpen, setIsRealInvoiceModalOpen] = useState(false);
   const [realInvoiceCardId, setRealInvoiceCardId] = useState<string>('');
   const [isBackupModalOpen, setIsBackupModalOpen] = useState(false);
+  const [isChecklistModalOpen, setIsChecklistModalOpen] = useState(false);
+  const [isGitHubModalOpen, setIsGitHubModalOpen] = useState(false);
 
   const handleOpenQuickExpense = (envelopeId?: string) => {
     setQuickExpenseEnvelopeId(envelopeId);
@@ -44,70 +60,154 @@ function MainApp() {
       <div className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center text-zinc-300">
         <div className="w-10 h-10 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin mb-4" />
         <span className="text-xs font-semibold tracking-wider uppercase text-zinc-400">
-          Carregando Fluxo de Caixa...
+          Carregando FluxoPro...
         </span>
       </div>
     );
   }
 
+  const current = currentMonthSummary || summaries[0];
+
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col selection:bg-emerald-500/20 selection:text-emerald-300">
-      {/* App Header */}
-      <Header
+    <div className="min-h-screen bg-zinc-950 text-zinc-100 flex selection:bg-emerald-500/20 selection:text-emerald-300">
+      {/* Collapsible Left Sidebar */}
+      <Sidebar
+        isCollapsed={isSidebarCollapsed}
+        onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
         onOpenNewTransaction={() => setIsNewTxModalOpen(true)}
         onOpenCsvImport={() => setIsCsvModalOpen(true)}
         onOpenBackupModal={() => setIsBackupModalOpen(true)}
+        onOpenChecklistModal={() => setIsChecklistModalOpen(true)}
+        onOpenGitHubModal={() => setIsGitHubModalOpen(true)}
       />
 
-      {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-6">
-        {activeTab === 'dashboard' && (
-          <DashboardTab
-            onOpenNewTransaction={() => setIsNewTxModalOpen(true)}
-            onOpenCsvImport={() => setIsCsvModalOpen(true)}
-          />
-        )}
+      {/* Main Layout Area offset by Sidebar */}
+      <div
+        className={`flex-1 flex flex-col min-w-0 transition-all duration-300 ${
+          isSidebarCollapsed ? 'pl-20' : 'pl-72'
+        }`}
+      >
+        {/* Top Navbar */}
+        <header className="h-16 border-b border-zinc-800/80 bg-zinc-950/80 backdrop-blur-md sticky top-0 z-30 px-4 sm:px-6 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+              className="p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800/80 transition"
+              title="Menu Sanduíche (Recolher / Expandir)"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
 
-        {activeTab === 'matrix' && (
-          <MatrixTab
-            onOpenNewTransaction={() => setIsNewTxModalOpen(true)}
-            onOpenCsvImport={() => setIsCsvModalOpen(true)}
-          />
-        )}
+            <div>
+              <h1 className="text-sm font-bold text-white tracking-tight flex items-center gap-2">
+                <span>FluxoPro</span>
+                <span className="text-zinc-500">•</span>
+                <span className="text-emerald-400 font-semibold">{current.label}</span>
+              </h1>
+              <span className="text-[11px] text-zinc-400 hidden sm:inline">
+                Saldo Projetado:{' '}
+                <strong
+                  className={
+                    current.finalBalance >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                  }
+                >
+                  {formatBRL(current.finalBalance)}
+                </strong>
+              </span>
+            </div>
+          </div>
 
-        {activeTab === 'monthly' && (
-          <MonthlyControlTab
-            onOpenQuickExpense={handleOpenQuickExpense}
-            onOpenNewTransaction={() => setIsNewTxModalOpen(true)}
-          />
-        )}
+          {/* Quick Action Buttons */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setIsChecklistModalOpen(true)}
+              className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-zinc-900 hover:bg-zinc-850 text-emerald-300 border border-emerald-500/30 transition shadow-sm"
+              title="Roteiro & Checklist Guiado"
+            >
+              <CheckSquare className="w-3.5 h-3.5" />
+              <span>Roteiro Guiado</span>
+            </button>
 
-        {activeTab === 'cards' && (
-          <CardsTab
-            onOpenNewTransaction={() => setIsNewTxModalOpen(true)}
-            onOpenCsvImport={() => setIsCsvModalOpen(true)}
-            onOpenRealInvoiceModal={handleOpenRealInvoice}
-          />
-        )}
+            <button
+              onClick={() => setIsGitHubModalOpen(true)}
+              className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-zinc-900 hover:bg-zinc-850 text-indigo-300 border border-indigo-500/30 transition shadow-sm"
+              title="Instruções para subir no GitHub"
+            >
+              <GitBranch className="w-3.5 h-3.5" />
+              <span>GitHub</span>
+            </button>
 
-        {activeTab === 'variables' && (
-          <VariableIncomesTab
-            onOpenNewTransaction={() => setIsNewTxModalOpen(true)}
-          />
-        )}
-      </main>
+            <button
+              onClick={() => setIsCsvModalOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-zinc-900 hover:bg-zinc-850 text-emerald-400 border border-emerald-500/30 transition shadow-sm"
+              title="Importar Fatura em PDF ou CSV com IA"
+            >
+              <Upload className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Importar PDF/CSV</span>
+            </button>
 
-      {/* Footer */}
-      <footer className="border-t border-zinc-900 bg-zinc-950 py-4 text-center text-xs text-zinc-400">
-        <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
-          <span>
-            FluxoCaixa Pro • Gestão Financeira Pessoal & Familiar • Rolling Forecast 12 Meses
-          </span>
-          <span className="text-[11px] text-zinc-400">
-            Arquitetura Híbrida: LocalStorage & Firebase Firestore
-          </span>
-        </div>
-      </footer>
+            <button
+              onClick={() => setIsNewTxModalOpen(true)}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold bg-emerald-500 hover:bg-emerald-400 text-zinc-950 transition shadow-md shadow-emerald-500/20"
+            >
+              <PlusCircle className="w-3.5 h-3.5 stroke-[2.5]" />
+              <span className="hidden sm:inline">Novo Lançamento</span>
+            </button>
+          </div>
+        </header>
+
+        {/* Tab Content */}
+        <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-6">
+          {activeTab === 'dashboard' && (
+            <DashboardTab
+              onOpenNewTransaction={() => setIsNewTxModalOpen(true)}
+              onOpenCsvImport={() => setIsCsvModalOpen(true)}
+            />
+          )}
+
+          {activeTab === 'matrix' && (
+            <MatrixTab
+              onOpenNewTransaction={() => setIsNewTxModalOpen(true)}
+              onOpenCsvImport={() => setIsCsvModalOpen(true)}
+            />
+          )}
+
+          {activeTab === 'monthly' && (
+            <MonthlyControlTab
+              onOpenQuickExpense={handleOpenQuickExpense}
+              onOpenNewTransaction={() => setIsNewTxModalOpen(true)}
+            />
+          )}
+
+          {activeTab === 'cards' && (
+            <CardsTab
+              onOpenNewTransaction={() => setIsNewTxModalOpen(true)}
+              onOpenCsvImport={() => setIsCsvModalOpen(true)}
+              onOpenRealInvoiceModal={handleOpenRealInvoice}
+            />
+          )}
+
+          {activeTab === 'variables' && (
+            <VariableIncomesTab
+              onOpenNewTransaction={() => setIsNewTxModalOpen(true)}
+            />
+          )}
+
+          {activeTab === 'raiox' && <RaioXTab />}
+        </main>
+
+        {/* Footer */}
+        <footer className="border-t border-zinc-900 bg-zinc-950 py-4 text-center text-xs text-zinc-400">
+          <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
+            <span>
+              FluxoPro • Gestão Financeira & Recuperação Fiscal 12M • Firebase Firestore
+            </span>
+            <span className="text-[11px] text-zinc-400">
+              Conectado ao Projeto: gen-lang-client-0435174156
+            </span>
+          </div>
+        </footer>
+      </div>
 
       {/* Modals */}
       <CsvImportModal
@@ -135,6 +235,16 @@ function MainApp() {
       <FirebaseBackupModal
         isOpen={isBackupModalOpen}
         onClose={() => setIsBackupModalOpen(false)}
+      />
+
+      <RoutineChecklistModal
+        isOpen={isChecklistModalOpen}
+        onClose={() => setIsChecklistModalOpen(false)}
+      />
+
+      <GitHubModal
+        isOpen={isGitHubModalOpen}
+        onClose={() => setIsGitHubModalOpen(false)}
       />
     </div>
   );

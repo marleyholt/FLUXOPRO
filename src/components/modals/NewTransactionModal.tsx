@@ -43,6 +43,8 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
   // Income specific
   const [incomeType, setIncomeType] = useState<'fixed' | 'variable'>('fixed');
   const [incomeCategory, setIncomeCategory] = useState('Salário');
+  const [incomeSource, setIncomeSource] = useState<'Carol' | 'Filipe' | 'custom'>('Filipe');
+  const [customIncomeSource, setCustomIncomeSource] = useState('');
 
   // Card Tx specific
   const [selectedCardId, setSelectedCardId] = useState(data.creditCards[0]?.id || '');
@@ -77,12 +79,15 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
         needsReview,
       });
     } else if (activeTab === 'income') {
+      const resolvedSource =
+        incomeSource === 'custom' ? customIncomeSource || 'Outro' : incomeSource;
       addIncome({
         title,
         type: incomeType,
         amount: parsedAmount,
         category: incomeCategory,
         scope,
+        source: resolvedSource,
         month: incomeType === 'variable' ? startMonth : undefined,
         startMonth: incomeType === 'fixed' ? startMonth : undefined,
         notes,
@@ -325,29 +330,84 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
           )}
 
           {activeTab === 'income' && (
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <label className="font-semibold text-zinc-300">Tipo de Receita</label>
-                <select
-                  value={incomeType}
-                  onChange={(e) => setIncomeType(e.target.value as any)}
-                  className="w-full px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-700 text-white outline-none focus:border-emerald-500"
-                >
-                  <option value="fixed">Fixa Recorrente (Salário, Renda Base)</option>
-                  <option value="variable">Variável / Extra (Bônus, Projeto)</option>
-                </select>
+            <div className="space-y-3">
+              {/* Fonte da Receita Selector */}
+              <div className="space-y-1.5 p-3 rounded-xl bg-zinc-900/60 border border-zinc-800">
+                <label className="font-semibold text-zinc-300 block">
+                  Fonte da Receita (Quem recebeu?)
+                </label>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIncomeSource('Filipe')}
+                    className={`px-3 py-1.5 rounded-lg font-semibold text-xs transition ${
+                      incomeSource === 'Filipe'
+                        ? 'bg-emerald-500 text-zinc-950 shadow-sm'
+                        : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
+                    }`}
+                  >
+                    Filipe
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIncomeSource('Carol')}
+                    className={`px-3 py-1.5 rounded-lg font-semibold text-xs transition ${
+                      incomeSource === 'Carol'
+                        ? 'bg-emerald-500 text-zinc-950 shadow-sm'
+                        : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
+                    }`}
+                  >
+                    Carol
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIncomeSource('custom')}
+                    className={`px-3 py-1.5 rounded-lg font-semibold text-xs transition ${
+                      incomeSource === 'custom'
+                        ? 'bg-emerald-500 text-zinc-950 shadow-sm'
+                        : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
+                    }`}
+                  >
+                    + Outro...
+                  </button>
+                </div>
+
+                {incomeSource === 'custom' && (
+                  <input
+                    type="text"
+                    required
+                    placeholder="Digite o nome da fonte (ex: Consultoria externa, Dividendos...)"
+                    value={customIncomeSource}
+                    onChange={(e) => setCustomIncomeSource(e.target.value)}
+                    className="w-full mt-2 px-3 py-2 rounded-lg bg-zinc-950 border border-zinc-700 text-white outline-none focus:border-emerald-500"
+                  />
+                )}
               </div>
 
-              <div className="space-y-1">
-                <label className="font-semibold text-zinc-300">Escopo</label>
-                <select
-                  value={scope}
-                  onChange={(e) => setScope(e.target.value as 'PF' | 'PJ')}
-                  className="w-full px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-700 text-white outline-none focus:border-emerald-500"
-                >
-                  <option value="PF">Pessoa Física (PF)</option>
-                  <option value="PJ">Pessoa Jurídica (PJ)</option>
-                </select>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="font-semibold text-zinc-300">Tipo de Receita</label>
+                  <select
+                    value={incomeType}
+                    onChange={(e) => setIncomeType(e.target.value as any)}
+                    className="w-full px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-700 text-white outline-none focus:border-emerald-500"
+                  >
+                    <option value="fixed">Fixa Recorrente (Salário, Renda Base)</option>
+                    <option value="variable">Variável / Extra (Bônus, Projeto)</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="font-semibold text-zinc-300">Escopo</label>
+                  <select
+                    value={scope}
+                    onChange={(e) => setScope(e.target.value as 'PF' | 'PJ')}
+                    className="w-full px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-700 text-white outline-none focus:border-emerald-500"
+                  >
+                    <option value="PF">Pessoa Física (PF)</option>
+                    <option value="PJ">Pessoa Jurídica (PJ)</option>
+                  </select>
+                </div>
               </div>
             </div>
           )}

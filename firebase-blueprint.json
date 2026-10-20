@@ -1,0 +1,41 @@
+{
+  "entities": {
+    "FluxoWorkspace": {
+      "title": "FluxoWorkspace",
+      "description": "Stores financial workspace data including incomes, expenses, credit cards, envelopes, and settings",
+      "type": "object",
+      "properties": {
+        "settings": {
+          "type": "object",
+          "description": "General workspace settings and timestamps"
+        },
+        "incomes": {
+          "type": "array",
+          "description": "List of income items"
+        },
+        "expenses": {
+          "type": "array",
+          "description": "List of fixed, installment, or periodic expenses"
+        },
+        "creditCards": {
+          "type": "array",
+          "description": "Configured credit cards and their transactions"
+        },
+        "variableLogs": {
+          "type": "array",
+          "description": "Logged actual variable expenses"
+        },
+        "envelopes": {
+          "type": "array",
+          "description": "Budget envelopes and limits"
+        }
+      }
+    }
+  },
+  "firestore": {
+    "/fluxo_caixa/{workspaceId}": {
+      "schema": "FluxoWorkspace",
+      "description": "Main workspace document storing the cashflow budget and forecasts"
+    }
+  }
+}

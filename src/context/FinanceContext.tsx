@@ -28,8 +28,8 @@ interface FinanceContextType {
   setSelectedMonth: (m: string) => void;
   scopeFilter: ScopeType;
   setScopeFilter: (s: ScopeType) => void;
-  activeTab: 'dashboard' | 'matrix' | 'monthly' | 'cards' | 'variables';
-  setActiveTab: (tab: 'dashboard' | 'matrix' | 'monthly' | 'cards' | 'variables') => void;
+  activeTab: 'dashboard' | 'matrix' | 'monthly' | 'cards' | 'variables' | 'raiox';
+  setActiveTab: (tab: 'dashboard' | 'matrix' | 'monthly' | 'cards' | 'variables' | 'raiox') => void;
   summaries: MonthSummary[];
   currentMonthSummary: MonthSummary | undefined;
   
@@ -61,6 +61,7 @@ interface FinanceContextType {
     updateRealInvoice: boolean
   ) => void;
 
+  toggleChecklistStep: (stepId: string) => void;
   updateSettings: (settings: Partial<AppSettings>) => void;
   restoreSeedData: () => void;
   importBackupData: (newData: AppData) => void;
@@ -75,7 +76,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [isUsingFirebase, setIsUsingFirebase] = useState<boolean>(false);
   const [selectedMonth, setSelectedMonth] = useState<string>('2025-12');
   const [scopeFilter, setScopeFilter] = useState<ScopeType>('ALL');
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'matrix' | 'monthly' | 'cards' | 'variables'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'matrix' | 'monthly' | 'cards' | 'variables' | 'raiox'>('dashboard');
 
   // Load initial data
   useEffect(() => {
@@ -147,7 +148,18 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         ...expense,
         id: `exp-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       };
-      persist({ ...data, expenses: [...data.expenses, newExp] });
+      persist({
+        ...data,
+        expenses: [...data.expenses, newExp],
+        settings: {
+          ...data.settings,
+          lastExpenseLogged: {
+            description: newExp.title,
+            amount: newExp.amount,
+            timestamp: new Date().toISOString(),
+          },
+        },
+      });
     },
     [data, persist]
   );
@@ -278,6 +290,14 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       persist({
         ...data,
         variableExpenseLogs: [...data.variableExpenseLogs, newLog],
+        settings: {
+          ...data.settings,
+          lastExpenseLogged: {
+            description: newLog.description,
+            amount: newLog.amount,
+            timestamp: new Date().toISOString(),
+          },
+        },
       });
     },
     [data, persist]
@@ -299,6 +319,23 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         env.id === envelopeId ? { ...env, targetAmount: newTarget } : env
       );
       persist({ ...data, budgetEnvelopes: updated });
+    },
+    [data, persist]
+  );
+
+  const toggleChecklistStep = useCallback(
+    (stepId: string) => {
+      const current = !!data.settings.checklistState?.[stepId];
+      persist({
+        ...data,
+        settings: {
+          ...data.settings,
+          checklistState: {
+            ...(data.settings.checklistState || {}),
+            [stepId]: !current,
+          },
+        },
+      });
     },
     [data, persist]
   );
@@ -414,6 +451,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         deleteVariableExpenseLog,
         updateBudgetEnvelopeTarget,
         importCsvTransactions,
+        toggleChecklistStep,
         updateSettings,
         restoreSeedData,
         importBackupData,

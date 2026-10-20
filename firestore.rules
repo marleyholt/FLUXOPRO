@@ -1,0 +1,8 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /fluxo_caixa/{workspaceId} {
+      allow read, write: if true;
+    }
+  }
+}

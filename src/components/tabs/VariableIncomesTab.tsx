@@ -25,6 +25,8 @@ export const VariableIncomesTab: React.FC<VariableIncomesTabProps> = ({
   const [amount, setAmount] = useState('');
   const [category, setCategory] = useState('Extra / Projetos');
   const [scope, setScope] = useState<'PF' | 'PJ'>('PF');
+  const [source, setSource] = useState<'Carol' | 'Filipe' | 'custom'>('Filipe');
+  const [customSource, setCustomSource] = useState('');
   const [month, setMonth] = useState(selectedMonth);
   const [notes, setNotes] = useState('');
 
@@ -44,12 +46,15 @@ export const VariableIncomesTab: React.FC<VariableIncomesTabProps> = ({
     const parsedAmount = parseFloat(amount);
     if (!title || isNaN(parsedAmount) || parsedAmount <= 0) return;
 
+    const resolvedSource = source === 'custom' ? customSource || 'Outro' : source;
+
     addIncome({
       title,
       type: 'variable',
       amount: parsedAmount,
       category,
       scope,
+      source: resolvedSource,
       month,
       notes,
     });
@@ -58,6 +63,7 @@ export const VariableIncomesTab: React.FC<VariableIncomesTabProps> = ({
     setTitle('');
     setAmount('');
     setNotes('');
+    setCustomSource('');
   };
 
   return (
@@ -188,7 +194,59 @@ export const VariableIncomesTab: React.FC<VariableIncomesTabProps> = ({
                   </label>
                 </div>
               </div>
-            </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-zinc-300">Fonte (Origem)</label>
+                  <div className="flex items-center gap-1.5 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setSource('Filipe')}
+                      className={`px-2 py-1 rounded text-[11px] font-semibold transition ${
+                        source === 'Filipe'
+                          ? 'bg-emerald-500 text-zinc-950 font-bold'
+                          : 'bg-zinc-800 text-zinc-400 hover:text-white'
+                      }`}
+                    >
+                      Filipe
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSource('Carol')}
+                      className={`px-2 py-1 rounded text-[11px] font-semibold transition ${
+                        source === 'Carol'
+                          ? 'bg-emerald-500 text-zinc-950 font-bold'
+                          : 'bg-zinc-800 text-zinc-400 hover:text-white'
+                      }`}
+                    >
+                      Carol
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSource('custom')}
+                      className={`px-2 py-1 rounded text-[11px] font-semibold transition ${
+                        source === 'custom'
+                          ? 'bg-emerald-500 text-zinc-950 font-bold'
+                          : 'bg-zinc-800 text-zinc-400 hover:text-white'
+                      }`}
+                    >
+                      + Outro
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {source === 'custom' && (
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-zinc-300">Nome da Fonte Personalizada</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Ex: Empresa Externa, Dividendos..."
+                    value={customSource}
+                    onChange={(e) => setCustomSource(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg bg-zinc-950 border border-zinc-800 text-xs text-white outline-none focus:border-emerald-500 transition"
+                  />
+                </div>
+              )}
 
             <div className="space-y-1">
               <label className="text-xs font-medium text-zinc-300">Observações (opcional)</label>
@@ -231,6 +289,7 @@ export const VariableIncomesTab: React.FC<VariableIncomesTabProps> = ({
                     <tr className="border-b border-zinc-800 bg-zinc-900/80 text-zinc-400 font-semibold">
                       <th className="py-2.5 px-3">Mês</th>
                       <th className="py-2.5 px-3">Descrição</th>
+                      <th className="py-2.5 px-3">Fonte</th>
                       <th className="py-2.5 px-3">Categoria</th>
                       <th className="py-2.5 px-3">Escopo</th>
                       <th className="py-2.5 px-3 text-right">Valor</th>
@@ -250,6 +309,11 @@ export const VariableIncomesTab: React.FC<VariableIncomesTabProps> = ({
                               {inc.notes}
                             </span>
                           )}
+                        </td>
+                        <td className="py-2.5 px-3">
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 font-semibold">
+                            {inc.source || 'Filipe'}
+                          </span>
                         </td>
                         <td className="py-2.5 px-3 text-zinc-400">{inc.category}</td>
                         <td className="py-2.5 px-3">

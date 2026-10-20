@@ -11,6 +11,7 @@ export interface Income {
   scope: 'PF' | 'PJ';
   month?: string; // YYYY-MM for variable
   startMonth?: string; // YYYY-MM for fixed start
+  source?: string; // 'Carol' | 'Filipe' | string
   notes?: string;
 }
 
@@ -97,9 +98,16 @@ export interface MonthSummary {
 
 export interface AppSettings {
   startMonth: string; // '2025-12'
-  initialBalance: number; // e.g. -3200
+  initialBalance: number; // e.g. 0 or previous
   firebaseConfigJson?: string;
   lastBackupDate?: string;
+  lastVisitTimestamp?: string;
+  lastExpenseLogged?: {
+    description: string;
+    amount: number;
+    timestamp: string;
+  };
+  checklistState?: Record<string, boolean>;
 }
 
 export interface AppData {

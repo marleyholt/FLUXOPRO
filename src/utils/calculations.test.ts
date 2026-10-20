@@ -35,8 +35,8 @@ test('getInstallmentInfo installment progress', () => {
 test('calculateForecast rolling balance carryover', () => {
   const summaries = calculateForecast(INITIAL_SEED_DATA, 'ALL', 13);
   assert.equal(summaries.length, 13);
-  assert.equal(summaries[0].previousBalance, -3200); // starts in overdraft
-  assert.equal(summaries[0].overdraftCover, 3200);
+  assert.equal(summaries[0].previousBalance, 0); // starts clean at 0
+  assert.equal(summaries[0].overdraftCover, 0);
   // Month 1 previousBalance must match Month 0 finalBalance
   assert.equal(summaries[1].previousBalance, summaries[0].finalBalance);
 });
