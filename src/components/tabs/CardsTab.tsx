@@ -226,6 +226,38 @@ export const CardsTab: React.FC<CardsTabProps> = ({
                   Venc. padrão: Dia {activeCard.dueDay}
                 </span>
               )}
+
+              {/* Payment Status Badge */}
+              {(() => {
+                const status = activeCard.invoicePaymentStatusByMonth?.[selectedMonth] || 'paid_on_time';
+                const paidAmt = activeCard.invoicePaidAmountByMonth?.[selectedMonth];
+                if (status === 'paid_on_time') {
+                  return (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-bold border border-emerald-500/30 mt-1">
+                      🟢 Pago Integral
+                    </span>
+                  );
+                }
+                if (status === 'paid_late') {
+                  return (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 text-[10px] font-bold border border-amber-500/30 mt-1">
+                      🟡 Pago com Atraso
+                    </span>
+                  );
+                }
+                if (status === 'partial_late') {
+                  return (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-orange-500/20 text-orange-300 text-[10px] font-bold border border-orange-500/30 mt-1">
+                      🟠 Parcial {paidAmt ? `(${formatBRL(paidAmt)})` : ''}
+                    </span>
+                  );
+                }
+                return (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-700/50 text-zinc-300 text-[10px] font-bold border border-zinc-600 mt-1">
+                    ⚪ Em Aberto
+                  </span>
+                );
+              })()}
             </div>
 
             {/* Adjust Real Invoice Button */}

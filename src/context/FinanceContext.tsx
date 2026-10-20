@@ -17,6 +17,7 @@ import {
   ExpenseFrequency,
   BankAccountConfig,
   BankStatementUploadRecord,
+  InvoicePaymentStatus,
 } from '../types/finance';
 import {
   loadAppData,
@@ -62,7 +63,14 @@ interface FinanceContextType {
   updateCardTransaction: (tx: CardTransaction) => void;
   deleteCardTransaction: (id: string) => void;
   toggleCardTransactionReview: (id: string) => void;
-  setCardRealInvoice: (cardId: string, month: string, realTotal: number | undefined, paymentDate?: string) => void;
+  setCardRealInvoice: (
+    cardId: string,
+    month: string,
+    realTotal: number | undefined,
+    paymentDate?: string,
+    paymentStatus?: InvoicePaymentStatus,
+    paidAmount?: number
+  ) => void;
 
   addVariableExpenseLog: (log: Omit<VariableExpenseLog, 'id'>) => void;
   updateVariableExpenseLog: (log: VariableExpenseLog) => void;
@@ -392,7 +400,14 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   );
 
   const setCardRealInvoice = useCallback(
-    (cardId: string, month: string, realTotal: number | undefined, paymentDate?: string) => {
+    (
+      cardId: string,
+      month: string,
+      realTotal: number | undefined,
+      paymentDate?: string,
+      paymentStatus?: InvoicePaymentStatus,
+      paidAmount?: number
+    ) => {
       if (isMonthClosed(month)) {
         console.warn(`Mês ${month} está fechado. Operação bloqueada.`);
         return;
@@ -401,6 +416,8 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         if (card.id === cardId) {
           const currentMap = { ...(card.realInvoiceTotalByMonth || {}) };
           const dateMap = { ...(card.invoicePaymentDateByMonth || {}) };
+          const statusMap = { ...(card.invoicePaymentStatusByMonth || {}) };
+          const paidMap = { ...(card.invoicePaidAmountByMonth || {}) };
 
           if (realTotal === undefined || isNaN(realTotal) || realTotal <= 0) {
             delete currentMap[month];
@@ -410,12 +427,28 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
           if (paymentDate) {
             dateMap[month] = paymentDate;
+          } else {
+            delete dateMap[month];
+          }
+
+          if (paymentStatus) {
+            statusMap[month] = paymentStatus;
+          } else {
+            delete statusMap[month];
+          }
+
+          if (paidAmount !== undefined && !isNaN(paidAmount) && paidAmount > 0) {
+            paidMap[month] = paidAmount;
+          } else {
+            delete paidMap[month];
           }
 
           return {
             ...card,
             realInvoiceTotalByMonth: currentMap,
             invoicePaymentDateByMonth: dateMap,
+            invoicePaymentStatusByMonth: statusMap,
+            invoicePaidAmountByMonth: paidMap,
           };
         }
         return card;

@@ -59,6 +59,8 @@ export interface BankAccountConfig {
   color?: string;
 }
 
+export type InvoicePaymentStatus = 'unpaid' | 'paid_on_time' | 'paid_late' | 'partial_late';
+
 export interface CreditCard {
   id: string;
   name: string;
@@ -72,6 +74,8 @@ export interface CreditCard {
   parcelamentoRateMonthly?: number; // Taxa do parcelamento da fatura (% a.m. - ex: 4.2)
   realInvoiceTotalByMonth?: Record<string, number>; // key: YYYY-MM -> real bank total
   invoicePaymentDateByMonth?: Record<string, string>; // key: YYYY-MM -> YYYY-MM-DD data de vencimento/pagamento
+  invoicePaymentStatusByMonth?: Record<string, InvoicePaymentStatus>; // key: YYYY-MM -> status do pagamento
+  invoicePaidAmountByMonth?: Record<string, number>; // key: YYYY-MM -> valor pago (se parcial)
   lastConsolidatedAt?: Record<string, string>; // key: YYYY-MM -> ISO timestamp de consolidação da fatura
 }
 
