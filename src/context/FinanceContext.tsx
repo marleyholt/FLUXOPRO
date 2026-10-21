@@ -61,7 +61,9 @@ interface FinanceContextType {
 
   addCardTransaction: (tx: Omit<CardTransaction, 'id'>) => void;
   updateCardTransaction: (tx: CardTransaction) => void;
+  bulkUpdateCardTransactions: (txIds: Set<string> | string[], updates: Partial<CardTransaction>) => void;
   deleteCardTransaction: (id: string) => void;
+  bulkDeleteCardTransactions: (txIds: Set<string> | string[]) => void;
   toggleCardTransactionReview: (id: string) => void;
   setCardRealInvoice: (
     cardId: string,
@@ -375,6 +377,20 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     [data, isMonthClosed, persistLocally]
   );
 
+  const bulkUpdateCardTransactions = useCallback(
+    (txIds: Set<string> | string[], updates: Partial<CardTransaction>) => {
+      const idSet = new Set(txIds);
+      const updated = data.cardTransactions.map((t) => {
+        if (idSet.has(t.id)) {
+          return { ...t, ...updates };
+        }
+        return t;
+      });
+      persistLocally({ ...data, cardTransactions: updated });
+    },
+    [data, persistLocally]
+  );
+
   const deleteCardTransaction = useCallback(
     (id: string) => {
       const tx = data.cardTransactions.find((t) => t.id === id);
@@ -389,6 +405,15 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       });
     },
     [data, isMonthClosed, persistLocally]
+  );
+
+  const bulkDeleteCardTransactions = useCallback(
+    (txIds: Set<string> | string[]) => {
+      const idSet = new Set(txIds);
+      const updated = data.cardTransactions.filter((t) => !idSet.has(t.id));
+      persistLocally({ ...data, cardTransactions: updated });
+    },
+    [data, persistLocally]
   );
 
   const toggleCardTransactionReview = useCallback(
@@ -1162,7 +1187,9 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         toggleExpenseReview,
         addCardTransaction,
         updateCardTransaction,
+        bulkUpdateCardTransactions,
         deleteCardTransaction,
+        bulkDeleteCardTransactions,
         toggleCardTransactionReview,
         setCardRealInvoice,
         updateCreditCardTrend,

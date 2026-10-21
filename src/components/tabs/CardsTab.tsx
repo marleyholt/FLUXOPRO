@@ -49,6 +49,8 @@ export const CardsTab: React.FC<CardsTabProps> = ({
     toggleCardTransactionReview,
     deleteCardTransaction,
     updateCardTransaction,
+    bulkUpdateCardTransactions,
+    bulkDeleteCardTransactions,
     setCardRealInvoice,
     updateCreditCardTrend,
   } = useFinance();
@@ -143,35 +145,22 @@ export const CardsTab: React.FC<CardsTabProps> = ({
   const handleApplyBulkCategory = () => {
     if (selectedTxIds.size === 0) return;
     const catToApply = bulkCategory || availableCategories[0] || 'Outros';
-    monthTransactions.forEach((tx) => {
-      if (selectedTxIds.has(tx.id)) {
-        updateCardTransaction({
-          ...tx,
-          category: catToApply,
-        });
-      }
-    });
+    bulkUpdateCardTransactions(selectedTxIds, { category: catToApply });
     setSelectedTxIds(new Set());
   };
 
   const handleApplyBulkReviewToggle = () => {
     if (selectedTxIds.size === 0) return;
-    monthTransactions.forEach((tx) => {
-      if (selectedTxIds.has(tx.id)) {
-        updateCardTransaction({
-          ...tx,
-          needsReview: !tx.needsReview,
-        });
-      }
-    });
+    const anyNeedsReview = monthTransactions.some(
+      (tx) => selectedTxIds.has(tx.id) && tx.needsReview
+    );
+    bulkUpdateCardTransactions(selectedTxIds, { needsReview: !anyNeedsReview });
     setSelectedTxIds(new Set());
   };
 
   const handleApplyBulkDelete = () => {
     if (selectedTxIds.size === 0) return;
-    selectedTxIds.forEach((id) => {
-      deleteCardTransaction(id);
-    });
+    bulkDeleteCardTransactions(selectedTxIds);
     setSelectedTxIds(new Set());
   };
 
@@ -252,19 +241,13 @@ export const CardsTab: React.FC<CardsTabProps> = ({
     setEditingTx(null);
   };
 
-  // Lista de Categorias / Envelopes disponíveis
+  // Lista de Categorias cadastradas estritamente nas Configurações (ou fallback se vazio)
   const availableCategories = Array.from(
-    new Set([
-      'Supermercado/Feira',
-      'Alimentação / iFood',
-      'Transporte / Combustível',
-      'Farmácia / Saúde',
-      'Lazer / Assinaturas',
-      'Eletrônicos',
-      'Vestuário',
-      'Outros',
-      ...data.budgetEnvelopes.map((e) => e.name),
-    ])
+    new Set(
+      data.budgetEnvelopes && data.budgetEnvelopes.length > 0
+        ? data.budgetEnvelopes.map((e) => e.name)
+        : ['Outros']
+    )
   );
 
   return (
