@@ -31,7 +31,7 @@ import {
 import { CardTransaction } from '../../types/finance';
 
 interface CardsTabProps {
-  onOpenNewTransaction: () => void;
+  onOpenNewTransaction: (cardId?: string) => void;
   onOpenCsvImport: () => void;
   onOpenRealInvoiceModal: (cardId: string) => void;
 }
@@ -486,7 +486,7 @@ export const CardsTab: React.FC<CardsTabProps> = ({
         </div>
 
         <button
-          onClick={onOpenNewTransaction}
+          onClick={() => onOpenNewTransaction(activeCard.id)}
           className="px-3.5 py-1.5 rounded-lg text-xs font-bold bg-emerald-500 hover:bg-emerald-400 text-zinc-950 transition flex items-center gap-1.5 shrink-0 self-end sm:self-auto"
         >
           <Plus className="w-3.5 h-3.5" />

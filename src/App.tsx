@@ -62,12 +62,20 @@ function MainApp({ currentUser }: MainAppProps) {
   // Modals state
   const [isCsvModalOpen, setIsCsvModalOpen] = useState(false);
   const [isNewTxModalOpen, setIsNewTxModalOpen] = useState(false);
+  const [newTxDefaultTab, setNewTxDefaultTab] = useState<'expense' | 'income' | 'cardTx' | undefined>();
+  const [newTxDefaultCardId, setNewTxDefaultCardId] = useState<string | undefined>();
   const [isQuickExpenseOpen, setIsQuickExpenseOpen] = useState(false);
   const [quickExpenseEnvelopeId, setQuickExpenseEnvelopeId] = useState<string | undefined>();
   const [isRealInvoiceModalOpen, setIsRealInvoiceModalOpen] = useState(false);
   const [realInvoiceCardId, setRealInvoiceCardId] = useState<string>('');
   const [isBackupModalOpen, setIsBackupModalOpen] = useState(false);
   const [isChecklistModalOpen, setIsChecklistModalOpen] = useState(false);
+
+  const handleOpenNewTransaction = (cardId?: string, tab?: 'expense' | 'income' | 'cardTx') => {
+    setNewTxDefaultCardId(cardId);
+    setNewTxDefaultTab(tab || (cardId ? 'cardTx' : undefined));
+    setIsNewTxModalOpen(true);
+  };
 
   const handleOpenQuickExpense = (envelopeId?: string) => {
     setQuickExpenseEnvelopeId(envelopeId);
@@ -105,11 +113,11 @@ function MainApp({ currentUser }: MainAppProps) {
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 flex selection:bg-emerald-500/20 selection:text-emerald-300">
-      {/* Collapsible Left Sidebar */}
+      {/* Sidebar */}
       <Sidebar
         isCollapsed={isSidebarCollapsed}
         onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-        onOpenNewTransaction={() => setIsNewTxModalOpen(true)}
+        onOpenNewTransaction={() => handleOpenNewTransaction()}
         onOpenCsvImport={() => setIsCsvModalOpen(true)}
         onOpenBackupModal={() => setIsBackupModalOpen(true)}
         onOpenChecklistModal={() => setIsChecklistModalOpen(true)}
@@ -223,32 +231,32 @@ function MainApp({ currentUser }: MainAppProps) {
         <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-6">
           {activeTab === 'dashboard' && (
             <DashboardTab
-              onOpenNewTransaction={() => setIsNewTxModalOpen(true)}
+              onOpenNewTransaction={() => handleOpenNewTransaction()}
               onOpenCsvImport={() => setIsCsvModalOpen(true)}
             />
           )}
           {activeTab === 'matrix' && (
             <MatrixTab
-              onOpenNewTransaction={() => setIsNewTxModalOpen(true)}
+              onOpenNewTransaction={() => handleOpenNewTransaction()}
               onOpenCsvImport={() => setIsCsvModalOpen(true)}
             />
           )}
           {activeTab === 'monthly' && (
             <MonthlyControlTab
               onOpenQuickExpense={handleOpenQuickExpense}
-              onOpenNewTransaction={() => setIsNewTxModalOpen(true)}
+              onOpenNewTransaction={() => handleOpenNewTransaction()}
             />
           )}
           {activeTab === 'cards' && (
             <CardsTab
-              onOpenNewTransaction={() => setIsNewTxModalOpen(true)}
+              onOpenNewTransaction={(cardId) => handleOpenNewTransaction(cardId, 'cardTx')}
               onOpenCsvImport={() => setIsCsvModalOpen(true)}
               onOpenRealInvoiceModal={handleOpenRealInvoice}
             />
           )}
           {activeTab === 'variables' && (
             <VariableIncomesTab
-              onOpenNewTransaction={() => setIsNewTxModalOpen(true)}
+              onOpenNewTransaction={() => handleOpenNewTransaction()}
             />
           )}
           {activeTab === 'raiox' && <RaioXTab />}
@@ -267,6 +275,8 @@ function MainApp({ currentUser }: MainAppProps) {
       <NewTransactionModal
         isOpen={isNewTxModalOpen}
         onClose={() => setIsNewTxModalOpen(false)}
+        defaultCardId={newTxDefaultCardId}
+        defaultTab={newTxDefaultTab}
       />
 
       <QuickExpenseModal

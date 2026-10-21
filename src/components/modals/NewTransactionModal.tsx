@@ -17,11 +17,15 @@ import { ExpenseFrequency, ScopeType } from '../../types/finance';
 interface NewTransactionModalProps {
   isOpen: boolean;
   onClose: () => void;
+  defaultCardId?: string;
+  defaultTab?: 'expense' | 'income' | 'cardTx';
 }
 
 export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
   isOpen,
   onClose,
+  defaultCardId,
+  defaultTab,
 }) => {
   const {
     data,
@@ -34,7 +38,6 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
   } = useFinance();
 
   const [activeTab, setActiveTab] = useState<'expense' | 'income' | 'cardTx'>('expense');
-
 
   // Common fields
   const [title, setTitle] = useState('');
@@ -74,10 +77,25 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
   const [customIncomeSource, setCustomIncomeSource] = useState('');
 
   // Card Tx specific
-  const [selectedCardId, setSelectedCardId] = useState(data.creditCards[0]?.id || '');
+  const [selectedCardId, setSelectedCardId] = useState(defaultCardId || data.creditCards[0]?.id || '');
   const [cardTxType, setCardTxType] = useState<'recurring' | 'installment' | 'single'>('installment');
   const [cardInstallments, setCardInstallments] = useState('10');
-  const [cardCategory, setCardCategory] = useState('Eletrônicos');
+  const [cardCategory, setCardCategory] = useState('');
+
+  // Sync state when modal opens
+  React.useEffect(() => {
+    if (isOpen) {
+      if (defaultTab) setActiveTab(defaultTab);
+      const cardToUse = defaultCardId || data.creditCards[0]?.id || '';
+      setSelectedCardId(cardToUse);
+      setStartMonth(selectedMonth);
+      setTitle('');
+      setAmount('');
+      setNotes('');
+      setNeedsReview(false);
+      setCardCategory(availableCategories[0] || 'Outros');
+    }
+  }, [isOpen, defaultTab, defaultCardId, selectedMonth, data.creditCards, availableCategories]);
 
   if (!isOpen) return null;
 
@@ -90,15 +108,14 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
       return;
     }
     const parsedAmount = parseFloat(amount);
-    if (!title || isNaN(parsedAmount) || parsedAmount <= 0) return;
+    if (!title.trim() || isNaN(parsedAmount) || parsedAmount <= 0) return;
 
     if (activeTab === 'expense') {
       const resolvedCategory = isNewCategory ? customCategoryName.trim() : expenseCategory;
       if (!resolvedCategory) return;
 
-
       addOrIncrementExpense({
-        title,
+        title: title.trim(),
         amount: parsedAmount,
         category: resolvedCategory,
         scope,
@@ -112,7 +129,7 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
       const resolvedSource =
         incomeSource === 'custom' ? customIncomeSource || 'Outro' : incomeSource;
       addIncome({
-        title,
+        title: title.trim(),
         type: incomeType,
         amount: parsedAmount,
         category: incomeCategory,
@@ -123,16 +140,23 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
         notes,
       });
     } else if (activeTab === 'cardTx') {
-      const numInst = cardTxType === 'installment' ? parseInt(cardInstallments, 10) : 1;
+      const effectiveCardId = selectedCardId || defaultCardId || data.creditCards[0]?.id || '';
+      if (!effectiveCardId) {
+        alert('Nenhum cartão selecionado. Cadastre um cartão de crédito primeiro.');
+        return;
+      }
+      const numInst = cardTxType === 'installment' ? parseInt(cardInstallments, 10) || 1 : 1;
+      const catToSave = cardCategory || availableCategories[0] || 'Outros';
+
       addCardTransaction({
-        cardId: selectedCardId,
-        description: title,
+        cardId: effectiveCardId,
+        description: title.trim(),
         type: cardTxType,
         installmentAmount: parsedAmount,
         totalAmount: parsedAmount * numInst,
         totalInstallments: numInst,
         startMonth,
-        category: cardCategory,
+        category: catToSave,
         needsReview,
         notes,
       });
@@ -507,47 +531,48 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
           )}
 
           {activeTab === 'cardTx' && (
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <label className="font-semibold text-zinc-300">Tipo no Cartão</label>
-                <select
-                  value={cardTxType}
-                  onChange={(e) => setCardTxType(e.target.value as any)}
-                  className="w-full px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-700 text-white outline-none focus:border-emerald-500"
-                >
-                  <option value="installment">Compra Parcelada</option>
-                  <option value="recurring">Assinatura Mensal (Netflix, Prime...)</option>
-                  <option value="single">Compra À Vista na Fatura</option>
-                </select>
-              </div>
-
-              {cardTxType === 'installment' ? (
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="font-semibold text-zinc-300">Total de Parcelas</label>
-                  <input
-                    type="number"
-                    min="2"
-                    max="48"
-                    value={cardInstallments}
-                    onChange={(e) => setCardInstallments(e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-700 text-white font-mono-numbers outline-none focus:border-emerald-500"
-                  />
+                  <label className="font-semibold text-zinc-300">Tipo no Cartão</label>
+                  <select
+                    value={cardTxType}
+                    onChange={(e) => setCardTxType(e.target.value as any)}
+                    className="w-full px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-700 text-white outline-none focus:border-emerald-500"
+                  >
+                    <option value="installment">Compra Parcelada</option>
+                    <option value="recurring">Assinatura Mensal (Netflix, Prime...)</option>
+                    <option value="single">Compra À Vista na Fatura</option>
+                  </select>
                 </div>
-              ) : (
+
                 <div className="space-y-1">
                   <label className="font-semibold text-zinc-300">Categoria</label>
                   <select
                     value={cardCategory}
                     onChange={(e) => setCardCategory(e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-700 text-white outline-none focus:border-emerald-500"
+                    className="w-full px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-700 text-white outline-none focus:border-emerald-500 font-medium"
                   >
-                    <option value="Assinaturas">Assinaturas</option>
-                    <option value="Eletrônicos">Eletrônicos</option>
-                    <option value="Supermercado">Supermercado</option>
-                    <option value="Restaurante">Restaurante</option>
-                    <option value="Viagem">Viagem</option>
-                    <option value="Outros">Outros</option>
+                    {availableCategories.map((cat) => (
+                      <option key={cat} value={cat}>
+                        {cat}
+                      </option>
+                    ))}
                   </select>
+                </div>
+              </div>
+
+              {cardTxType === 'installment' && (
+                <div className="space-y-1">
+                  <label className="font-semibold text-zinc-300">Total de Parcelas</label>
+                  <input
+                    type="number"
+                    min="2"
+                    max="120"
+                    value={cardInstallments}
+                    onChange={(e) => setCardInstallments(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-700 text-white font-mono-numbers outline-none focus:border-emerald-500"
+                  />
                 </div>
               )}
             </div>
