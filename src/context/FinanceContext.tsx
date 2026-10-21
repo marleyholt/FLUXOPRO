@@ -37,6 +37,8 @@ interface FinanceContextType {
   isSavingToFirebase: boolean;
   selectedMonth: string;
   setSelectedMonth: (m: string) => void;
+  vigenteMonth: string;
+  setVigenteMonth: (m: string) => void;
   scopeFilter: ScopeType;
   setScopeFilter: (s: ScopeType) => void;
   activeTab: 'dashboard' | 'matrix' | 'monthly' | 'cards' | 'variables' | 'raiox' | 'closing' | 'simulation' | 'settings' | 'config';
@@ -204,6 +206,21 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setHasUnsavedChanges(false);
     setLoading(false);
   }, []);
+
+  const vigenteMonth = data.settings.vigenteMonth || data.settings.startMonth || '2026-01';
+
+  const setVigenteMonth = useCallback(
+    (m: string) => {
+      persistLocally({
+        ...data,
+        settings: {
+          ...data.settings,
+          vigenteMonth: m,
+        },
+      });
+    },
+    [data, persistLocally]
+  );
 
   // Calculate rolling forecast
   const summaries = useMemo(() => {
@@ -1169,6 +1186,8 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         isSavingToFirebase,
         selectedMonth,
         setSelectedMonth,
+        vigenteMonth,
+        setVigenteMonth,
         scopeFilter,
         setScopeFilter,
         activeTab,

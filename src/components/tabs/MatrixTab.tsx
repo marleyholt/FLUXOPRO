@@ -31,7 +31,7 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
   onOpenNewTransaction,
   onOpenCsvImport,
 }) => {
-  const { data, summaries, scopeFilter, selectedMonth, setSelectedMonth, setActiveTab } = useFinance();
+  const { data, summaries, scopeFilter, selectedMonth, setSelectedMonth, vigenteMonth, setActiveTab } = useFinance();
 
   const handleCellClick = (
     month: string,
@@ -175,17 +175,25 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
                 </th>
                 {summaries.map((s) => {
                   const isSelected = s.month === selectedMonth;
+                  const isVigente = s.month === vigenteMonth;
                   return (
                     <th
                       key={s.month}
                       onClick={() => setSelectedMonth(s.month)}
-                      className={`py-3 px-3 text-right font-bold transition cursor-pointer select-none min-w-[105px] ${
-                        isSelected
+                      className={`py-3 px-3 text-right font-bold transition cursor-pointer select-none min-w-[110px] ${
+                        isVigente
+                          ? 'bg-emerald-500/20 text-emerald-200 ring-2 ring-emerald-400 ring-inset z-10'
+                          : isSelected
                           ? 'bg-emerald-500/10 text-emerald-300 border-b-2 border-emerald-400'
                           : 'text-zinc-300 hover:bg-zinc-800/60'
                       }`}
                     >
                       <div className="text-[11px] font-semibold flex items-center justify-end gap-1">
+                        {isVigente && (
+                          <span className="px-1.5 py-0.2 rounded bg-emerald-500/30 text-emerald-300 text-[9px] font-extrabold border border-emerald-400/40 shrink-0">
+                            ⭐ Vigente
+                          </span>
+                        )}
                         <span>{s.label}</span>
                         {data.monthlyClosings?.[s.month]?.isClosed && (
                           <span title="Mês Fechado e Bloqueado" className="text-[10px]">🔒</span>
@@ -700,6 +708,8 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
                           const effective = Math.max(target, totalSpent);
                           const isOverflow = totalSpent > target;
 
+                          const isFutureOrVigente = s.month >= vigenteMonth;
+
                           return (
                             <td
                               key={s.month}
@@ -713,17 +723,33 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
                                 setHoveredRow(null);
                                 setHoveredCol(null);
                               }}
-                              className={`py-2 px-3 text-right font-mono-numbers cursor-pointer transition ${getCellHoverClass(
+                              className={`py-2 px-3 text-right font-mono-numbers cursor-pointer transition ${
+                                s.month === vigenteMonth ? 'bg-emerald-950/20 border-x border-emerald-500/20' : ''
+                              } ${getCellHoverClass(
                                 env.id,
                                 s.month
                               )} ${isOverflow ? 'text-rose-400 font-bold' : 'text-zinc-300'}`}
                             >
-                              {formatBRL(effective)}
-                              {totalSpent > 0 && (
-                                <span className="block text-[9px] text-zinc-400">
-                                  Real: {formatBRL(totalSpent)}
-                                  {cardTotal > 0 && <span className="text-indigo-400 ml-1">💳</span>}
-                                </span>
+                              {isFutureOrVigente ? (
+                                <>
+                                  <div className="font-bold text-amber-300 text-xs">
+                                    {formatBRL(target)}
+                                  </div>
+                                  <div className="text-[9px] text-zinc-400 font-medium mt-0.5">
+                                    Real: {formatBRL(totalSpent)}
+                                    {cardTotal > 0 && <span className="text-indigo-400 ml-1">💳</span>}
+                                  </div>
+                                </>
+                              ) : (
+                                <>
+                                  {formatBRL(effective)}
+                                  {totalSpent > 0 && (
+                                    <span className="block text-[9px] text-zinc-400">
+                                      Real: {formatBRL(totalSpent)}
+                                      {cardTotal > 0 && <span className="text-indigo-400 ml-1">💳</span>}
+                                    </span>
+                                  )}
+                                </>
                               )}
                             </td>
                           );

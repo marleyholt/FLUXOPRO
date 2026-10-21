@@ -242,7 +242,7 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
                 </span>
               </strong>
               <p className="text-amber-300/90 mt-0.5 max-w-2xl">
-                O fechamento mensal deste período foi finalizado. Nenhuma conta, previsão, envelope ou lançamento real pode ser criado, alterado ou excluído. Para fazer novos lançamentos ou correções neste mês, acesse <strong>Fechamento Mensal</strong> e reabra o mês.
+                A abertura deste período foi consolidada. Nenhuma conta, previsão, envelope ou lançamento real pode ser criado, alterado ou excluído. Para fazer novos lançamentos ou correções neste mês, acesse <strong>Abertura de Mês</strong> e reabra o mês.
               </p>
             </div>
           </div>
@@ -250,7 +250,7 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
             onClick={() => setActiveTab('closing')}
             className="px-3.5 py-2 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-400 text-zinc-950 transition flex items-center gap-1.5 shrink-0 shadow self-start sm:self-auto"
           >
-            <span>Ir para Fechamento</span>
+            <span>Ir para Abertura de Mês</span>
             <ArrowRight className="w-3.5 h-3.5" />
           </button>
         </div>

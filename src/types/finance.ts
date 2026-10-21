@@ -169,6 +169,9 @@ export interface MonthlyClosingRecord {
   projectedBalance: number; // Saldo projetado calculado pelo sistema
   adjustmentDifference: number; // real - projetado
   isOverdraft: boolean; // se closingRealBalance < 0
+  bankAccountId?: string; // Conta bancária selecionada
+  bankAccountName?: string; // Nome da conta bancária
+  negativeSinceDate?: string; // YYYY-MM-DD (se saldo < 0)
   scheduledReminders: ScheduledBillReminder[];
   pushedDebts: PushedDebtBill[];
   notes?: string;
@@ -182,6 +185,7 @@ export interface MonthlyClosingRecord {
 export interface AppSettings {
   startMonth: string; // '2025-12'
   initialBalance: number; // e.g. 0 or previous
+  vigenteMonth?: string; // YYYY-MM do Mês Vigente
   firebaseConfigJson?: string;
   lastBackupDate?: string;
   lastVisitTimestamp?: string;
