@@ -180,34 +180,6 @@ export function calculateForecast(
     const cardUnmappedDiffByCard: Record<string, number> = {};
     const cardItemsCountByCard: Record<string, number> = {};
 
-    // Calculate average consumption trend (diferença entre fatura real e lançamentos) por cartão
-    const cardConsumptionTrend: Record<string, number> = {};
-    data.creditCards.forEach((card) => {
-      const realInvoices = card.realInvoiceTotalByMonth || {};
-      const keys = Object.keys(realInvoices);
-      if (keys.length > 0) {
-        let diffSum = 0;
-        let count = 0;
-        keys.forEach((m) => {
-          const real = realInvoices[m];
-          let sumForM = 0;
-          data.cardTransactions.forEach((tx) => {
-            if (tx.cardId !== card.id || tx.isPaused) return;
-            if (tx.type === 'recurring' && getMonthDiff(tx.startMonth, m) >= 0) sumForM += tx.installmentAmount;
-            else if (tx.type === 'installment' && getInstallmentInfo(tx.startMonth, tx.totalInstallments, m).isActive) sumForM += tx.installmentAmount;
-            else if (tx.type === 'single' && tx.startMonth === m) sumForM += tx.installmentAmount;
-          });
-          if (real > sumForM) {
-            diffSum += (real - sumForM);
-            count++;
-          }
-        });
-        cardConsumptionTrend[card.id] = count > 0 ? Math.round(diffSum / count) : 0;
-      } else {
-        cardConsumptionTrend[card.id] = 0;
-      }
-    });
-
     data.creditCards.forEach((card) => {
       if (scopeFilter !== 'ALL' && card.scope !== scopeFilter) return;
 
@@ -249,8 +221,39 @@ export function calculateForecast(
         }
         effectiveCardTotal = Math.max(realInvoice, cardDetailedSum);
       } else {
-        // Projeta tendência de compras correntes para meses futuros
-        const projectedTrend = cardConsumptionTrend[card.id] || 0;
+        // Projeta tendência para meses futuros
+        let projectedTrend = 0;
+
+        if (card.manualProjectedTrend !== undefined && card.manualProjectedTrend !== null) {
+          projectedTrend = card.manualProjectedTrend;
+        } else {
+          // Busca a fatura real fechada mais recente
+          const realInvoiceMonths = Object.keys(card.realInvoiceTotalByMonth || {}).sort();
+          if (realInvoiceMonths.length > 0) {
+            const latestRealMonth = realInvoiceMonths[realInvoiceMonths.length - 1];
+            const latestRealTotal = card.realInvoiceTotalByMonth![latestRealMonth];
+
+            // Calcula compras mapeadas no último mês real
+            let sumForLatest = 0;
+            data.cardTransactions.forEach((tx) => {
+              if (tx.cardId !== card.id || tx.isPaused) return;
+              if (tx.type === 'recurring' && getMonthDiff(tx.startMonth, latestRealMonth) >= 0) sumForLatest += tx.installmentAmount;
+              else if (tx.type === 'installment' && getInstallmentInfo(tx.startMonth, tx.totalInstallments, latestRealMonth).isActive) sumForLatest += tx.installmentAmount;
+              else if (tx.type === 'single' && tx.startMonth === latestRealMonth) sumForLatest += tx.installmentAmount;
+            });
+
+            const baseDiff = Math.max(0, latestRealTotal - sumForLatest);
+            const monthsAhead = getMonthDiff(latestRealMonth, month);
+
+            if (monthsAhead > 0) {
+              // Redução automática de 10% ao mês (0.90^n) para projetar redução gradual de gastos avulsos
+              projectedTrend = Math.round(baseDiff * Math.pow(0.90, monthsAhead));
+            } else {
+              projectedTrend = baseDiff;
+            }
+          }
+        }
+
         effectiveCardTotal = cardDetailedSum + projectedTrend;
         unmappedDiff = projectedTrend;
       }

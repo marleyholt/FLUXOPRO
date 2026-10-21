@@ -51,6 +51,10 @@ export function parseCreditCardCsv(csvContent: string, targetMonth: string): Csv
     (h) => h.includes('categor') || h.includes('category')
   );
 
+  let installmentIdx = header.findIndex(
+    (h) => h.includes('parcela') || h.includes('plano') || h.includes('prestac') || h.includes('quota')
+  );
+
   // Fallbacks if no header detected
   if (dateIdx === -1 && header.length >= 3) dateIdx = 0;
   if (descIdx === -1 && header.length >= 3) descIdx = 1;
@@ -67,6 +71,7 @@ export function parseCreditCardCsv(csvContent: string, targetMonth: string): Csv
     const rawDesc = rawCols[descIdx] || rawCols[0] || 'Lançamento Cartão';
     const rawAmount = rawCols[amountIdx] || rawCols[rawCols.length - 1] || '0';
     const rawCat = catIdx !== -1 ? rawCols[catIdx] : 'Fatura';
+    const rawInstallmentCol = installmentIdx !== -1 ? rawCols[installmentIdx] || '' : '';
 
     // Parse amount
     // Clean currency symbols, spaces, handles both 1.250,50 and 1250.50
@@ -92,13 +97,13 @@ export function parseCreditCardCsv(csvContent: string, targetMonth: string): Csv
       lowerDesc.includes('pagamento de fatura') ||
       lowerDesc.includes('pagamento efetuado');
 
-    // Detect installments in description, e.g. "Magazine Luiza - Parcela 02/10" or "02/10"
+    // Detect installments in description or dedicated Parcela column, e.g. "09/12" or "02/10"
     let installmentsCurrent: number | undefined;
     let installmentsTotal: number | undefined;
     let cleanDesc = rawDesc;
 
     const installmentRegex = /(?:parcela\s*)?(\d{1,2})\s*[\/|de]\s*(\d{1,2})/i;
-    const match = rawDesc.match(installmentRegex);
+    const match = rawDesc.match(installmentRegex) || rawInstallmentCol.match(installmentRegex);
 
     if (match) {
       const current = parseInt(match[1], 10);
@@ -106,8 +111,10 @@ export function parseCreditCardCsv(csvContent: string, targetMonth: string): Csv
       if (total >= 2 && current <= total) {
         installmentsCurrent = current;
         installmentsTotal = total;
-        // Clean out suffix for clean name
-        cleanDesc = rawDesc.replace(match[0], '').replace(/[-–—]\s*$/, '').trim();
+        // Clean out suffix for clean name if match was in rawDesc
+        if (rawDesc.match(installmentRegex)) {
+          cleanDesc = rawDesc.replace(match[0], '').replace(/[-–—]\s*$/, '').trim();
+        }
       }
     }
 

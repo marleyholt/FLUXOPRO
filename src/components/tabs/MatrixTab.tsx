@@ -72,17 +72,33 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
     });
   };
 
+  // Cell crosshair hover state
+  const [hoveredRow, setHoveredRow] = useState<string | null>(null);
+  const [hoveredCol, setHoveredCol] = useState<string | null>(null);
+
+  const getCellHoverClass = (rowId: string, month: string) => {
+    const isRowHovered = hoveredRow === rowId;
+    const isColHovered = hoveredCol === month;
+    if (isRowHovered && isColHovered) {
+      return 'bg-emerald-500/20 text-emerald-200 font-bold outline outline-1 outline-emerald-500/40 z-10';
+    }
+    if (isRowHovered || isColHovered) {
+      return 'bg-zinc-800/70';
+    }
+    return '';
+  };
+
   // Filtered lists
   const filteredIncomes = data.incomes.filter(
     (inc) => scopeFilter === 'ALL' || inc.scope === scopeFilter
   );
 
   const filteredPjExpenses = data.expenses.filter(
-    (exp) => exp.scope === 'PJ' && (scopeFilter === 'ALL' || scopeFilter === 'PJ')
+    (exp) => exp.scope === 'PJ' && exp.frequency !== 'single' && (scopeFilter === 'ALL' || scopeFilter === 'PJ')
   );
 
   const filteredPfExpenses = data.expenses.filter(
-    (exp) => exp.scope === 'PF' && (scopeFilter === 'ALL' || scopeFilter === 'PF')
+    (exp) => exp.scope === 'PF' && exp.frequency !== 'single' && (scopeFilter === 'ALL' || scopeFilter === 'PF')
   );
 
   const filteredCards = data.creditCards.filter(
@@ -266,9 +282,18 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
                         return (
                           <td
                             key={s.month}
-                            className={`py-2 px-3 text-right font-mono-numbers ${
-                              amount > 0 ? 'text-zinc-200' : 'text-zinc-400'
-                            }`}
+                            onMouseEnter={() => {
+                              setHoveredRow(inc.id);
+                              setHoveredCol(s.month);
+                            }}
+                            onMouseLeave={() => {
+                              setHoveredRow(null);
+                              setHoveredCol(null);
+                            }}
+                            className={`py-2 px-3 text-right font-mono-numbers transition ${getCellHoverClass(
+                              inc.id,
+                              s.month
+                            )} ${amount > 0 ? 'text-zinc-200' : 'text-zinc-400'}`}
                           >
                             {amount > 0 ? formatBRL(amount) : '-'}
                           </td>
@@ -457,9 +482,18 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
                             return (
                               <td
                                 key={s.month}
-                                className={`py-2 px-3 text-right font-mono-numbers ${
-                                  amount > 0 ? 'text-zinc-200' : 'text-zinc-400'
-                                }`}
+                                onMouseEnter={() => {
+                                  setHoveredRow(exp.id);
+                                  setHoveredCol(s.month);
+                                }}
+                                onMouseLeave={() => {
+                                  setHoveredRow(null);
+                                  setHoveredCol(null);
+                                }}
+                                className={`py-2 px-3 text-right font-mono-numbers transition ${getCellHoverClass(
+                                  exp.id,
+                                  s.month
+                                )} ${amount > 0 ? 'text-zinc-200' : 'text-zinc-400'}`}
                               >
                                 {amount > 0 ? (
                                   <div>
@@ -536,9 +570,18 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
                           return (
                             <td
                               key={s.month}
-                              className={`py-2 px-3 text-right font-mono-numbers ${
-                                isOverflow ? 'text-rose-400 font-bold' : 'text-zinc-300'
-                              }`}
+                              onMouseEnter={() => {
+                                setHoveredRow(env.id);
+                                setHoveredCol(s.month);
+                              }}
+                              onMouseLeave={() => {
+                                setHoveredRow(null);
+                                setHoveredCol(null);
+                              }}
+                              className={`py-2 px-3 text-right font-mono-numbers transition ${getCellHoverClass(
+                                env.id,
+                                s.month
+                              )} ${isOverflow ? 'text-rose-400 font-bold' : 'text-zinc-300'}`}
                             >
                               {formatBRL(effective)}
                               {logged > 0 && logged !== env.targetAmount && (
@@ -607,7 +650,18 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
                       return (
                         <td
                           key={s.month}
-                          className="py-2 px-3 text-right font-mono-numbers text-zinc-200"
+                          onMouseEnter={() => {
+                            setHoveredRow(card.id);
+                            setHoveredCol(s.month);
+                          }}
+                          onMouseLeave={() => {
+                            setHoveredRow(null);
+                            setHoveredCol(null);
+                          }}
+                          className={`py-2 px-3 text-right font-mono-numbers transition ${getCellHoverClass(
+                            card.id,
+                            s.month
+                          )} text-zinc-200`}
                         >
                           {total > 0 ? formatBRL(total) : '-'}
                           {diff > 0 && (

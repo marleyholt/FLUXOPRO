@@ -71,6 +71,7 @@ interface FinanceContextType {
     paymentStatus?: InvoicePaymentStatus,
     paidAmount?: number
   ) => void;
+  updateCreditCardTrend: (cardId: string, manualProjectedTrend: number | undefined) => void;
 
   addVariableExpenseLog: (log: Omit<VariableExpenseLog, 'id'>) => void;
   updateVariableExpenseLog: (log: VariableExpenseLog) => void;
@@ -461,6 +462,25 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     [data, isMonthClosed, persistLocally]
   );
 
+  const updateCreditCardTrend = useCallback(
+    (cardId: string, manualProjectedTrend: number | undefined) => {
+      const updatedCards = data.creditCards.map((card) => {
+        if (card.id === cardId) {
+          return {
+            ...card,
+            manualProjectedTrend:
+              manualProjectedTrend !== undefined && !isNaN(manualProjectedTrend)
+                ? Math.max(0, manualProjectedTrend)
+                : undefined,
+          };
+        }
+        return card;
+      });
+      persistLocally({ ...data, creditCards: updatedCards });
+    },
+    [data, persistLocally]
+  );
+
   // Variable Expense Logs & Categories
   const addVariableExpenseLog = useCallback(
     (log: Omit<VariableExpenseLog, 'id'>) => {
@@ -656,27 +676,24 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         targetEnvelopeAmount,
       } = params;
 
-      // Check if this belongs to an envelope/variable category or fixed/installment expense
-      let updatedEnvelopes = [...data.budgetEnvelopes];
-      let existingEnv = updatedEnvelopes.find(
-        (e) => e.name.trim().toLowerCase() === category.trim().toLowerCase()
-      );
-
-      // If category doesn't exist as envelope yet, create it!
-      let categoryId = existingEnv?.id;
-      if (!existingEnv) {
-        categoryId = `env-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`;
-        const newEnv: VariableBudgetCategory = {
-          id: categoryId,
-          name: category,
-          targetAmount: targetEnvelopeAmount || amount,
-        };
-        updatedEnvelopes.push(newEnv);
-      }
-
-      // If frequency is single/variable or matches an envelope, log it as a detailed variable expense entry
-      // This guarantees each launch is individually discriminated, while the envelope total sums up!
+      // If frequency is single/variable, log it as a detailed variable expense entry in budgetEnvelopes
       if (frequency === 'single') {
+        let updatedEnvelopes = [...data.budgetEnvelopes];
+        let existingEnv = updatedEnvelopes.find(
+          (e) => e.name.trim().toLowerCase() === category.trim().toLowerCase()
+        );
+
+        let categoryId = existingEnv?.id;
+        if (!existingEnv) {
+          categoryId = `env-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`;
+          const newEnv: VariableBudgetCategory = {
+            id: categoryId,
+            name: category,
+            targetAmount: targetEnvelopeAmount || amount,
+          };
+          updatedEnvelopes.push(newEnv);
+        }
+
         const newLog: VariableExpenseLog = {
           id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
           categoryId: categoryId!,
@@ -700,7 +717,8 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
           },
         });
       } else {
-        // Fixed or installment expense: add as a distinct expense under this category
+        // Fixed, installment or periodic expense: add strictly as a distinct Expense object
+        // Do NOT touch budgetEnvelopes to prevent double-counting or polluting variable envelopes
         const newExp: Expense = {
           id: `exp-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
           title,
@@ -715,7 +733,6 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
         persistLocally({
           ...data,
-          budgetEnvelopes: updatedEnvelopes,
           expenses: [...data.expenses, newExp],
           settings: {
             ...data.settings,
@@ -1148,6 +1165,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         deleteCardTransaction,
         toggleCardTransactionReview,
         setCardRealInvoice,
+        updateCreditCardTrend,
         addVariableExpenseLog,
         updateVariableExpenseLog,
         deleteVariableExpenseLog,

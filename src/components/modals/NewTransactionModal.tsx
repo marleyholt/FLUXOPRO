@@ -53,27 +53,19 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
   const [installmentsCount, setInstallmentsCount] = useState('12');
   const [periodicInterval, setPeriodicInterval] = useState<'quarterly' | 'annual'>('quarterly');
 
-  // Dynamic Categories list
+  // Dynamic Categories list - strictly uses configured budgetEnvelopes from Configurações
   const availableCategories = useMemo(() => {
-    const defaultList = [
+    const configuredEnvelopes = (data.budgetEnvelopes || []).map((e) => e.name);
+    if (configuredEnvelopes.length > 0) {
+      return Array.from(new Set(configuredEnvelopes.filter(Boolean)));
+    }
+    return [
       'Moradia/Contas',
-      'Financiamento/Dívidas',
       'Educação',
-      'Família/Pets',
-      'Impostos/DAS',
-      'Contador',
-      'Manutenção',
-      'Supermercado/Feira',
-      'Alimentação / iFood',
-      'Transporte / Combustível',
-      'Farmácia / Saúde',
-      'Lazer / Assinaturas',
+      'Mercado',
       'Outros',
     ];
-    const fromExpenses = data.expenses.map((e) => e.category);
-    const fromEnvelopes = data.budgetEnvelopes.map((e) => e.name);
-    return Array.from(new Set([...defaultList, ...fromExpenses, ...fromEnvelopes].filter(Boolean)));
-  }, [data.expenses, data.budgetEnvelopes]);
+  }, [data.budgetEnvelopes]);
 
   // Income specific
   const [incomeType, setIncomeType] = useState<'fixed' | 'variable'>('fixed');

@@ -80,6 +80,7 @@ export interface CreditCard {
   limit?: number; // Limite total do cartão (R$)
   rotativoRateMonthly?: number; // Taxa do rotativo (% a.m. - ex: 14.5)
   parcelamentoRateMonthly?: number; // Taxa do parcelamento da fatura (% a.m. - ex: 4.2)
+  manualProjectedTrend?: number; // Valor de projeção mensal manual do cartão (ex: R$ 2000)
   realInvoiceTotalByMonth?: Record<string, number>; // key: YYYY-MM -> real bank total
   invoicePaymentDateByMonth?: Record<string, string>; // key: YYYY-MM -> YYYY-MM-DD data de vencimento/pagamento
   invoicePaymentStatusByMonth?: Record<string, InvoicePaymentStatus>; // key: YYYY-MM -> status do pagamento

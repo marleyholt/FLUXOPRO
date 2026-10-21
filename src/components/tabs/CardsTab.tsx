@@ -46,6 +46,7 @@ export const CardsTab: React.FC<CardsTabProps> = ({
     deleteCardTransaction,
     updateCardTransaction,
     setCardRealInvoice,
+    updateCreditCardTrend,
   } = useFinance();
 
   const [selectedCardId, setSelectedCardId] = useState<string>(
@@ -326,6 +327,57 @@ export const CardsTab: React.FC<CardsTabProps> = ({
               {realInvoice !== undefined ? 'Ajustar Fatura Real' : 'Informar Fatura Real'}
             </button>
           </div>
+        </div>
+      </div>
+
+      {/* Projection Trend Control Box */}
+      <div className="p-4 rounded-xl bg-zinc-900/60 border border-zinc-800/80 text-xs flex flex-col md:flex-row md:items-center justify-between gap-3">
+        <div className="flex items-start gap-2.5">
+          <TrendingDown className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+          <div>
+            <div className="font-bold text-zinc-200 flex items-center gap-2">
+              <span>Projeção Futurista do Cartão ({activeCard.name})</span>
+              {activeCard.manualProjectedTrend !== undefined ? (
+                <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[10px] font-semibold border border-emerald-500/30">
+                  Manual Definitivo
+                </span>
+              ) : (
+                <span className="px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 text-[10px] font-semibold border border-blue-500/30">
+                  Automático (-10%/mês)
+                </span>
+              )}
+            </div>
+            <p className="text-[11px] text-zinc-400 mt-0.5">
+              {activeCard.manualProjectedTrend !== undefined
+                ? `Projetando R$ ${activeCard.manualProjectedTrend.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} fixos/mês para compras avulsas em meses futuros.`
+                : 'Projetando parcelas restantes somadas à diferença da fatura com redução automática de 10% a cada mês futuro para simular queda de consumo.'}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          <label className="text-[11px] text-zinc-300 font-medium">
+            Projeção Avulsa (R$):
+          </label>
+          <input
+            type="number"
+            placeholder="Auto (-10%)"
+            value={activeCard.manualProjectedTrend !== undefined ? activeCard.manualProjectedTrend : ''}
+            onChange={(e) => {
+              const val = e.target.value === '' ? undefined : parseFloat(e.target.value);
+              updateCreditCardTrend(activeCard.id, val);
+            }}
+            className="w-28 px-2.5 py-1.5 rounded-lg bg-zinc-950 border border-zinc-700 text-white font-mono text-xs focus:outline-none focus:border-emerald-500"
+          />
+          {activeCard.manualProjectedTrend !== undefined && (
+            <button
+              onClick={() => updateCreditCardTrend(activeCard.id, undefined)}
+              className="px-2 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white transition text-[11px]"
+              title="Voltar para projeção de redução automática de 10% a.m."
+            >
+              Resetar Auto
+            </button>
+          )}
         </div>
       </div>
 
