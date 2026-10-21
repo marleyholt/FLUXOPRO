@@ -1224,53 +1224,84 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
                               </p>
 
                               <div className="space-y-1.5 pt-1">
-                                {unplannedLogs.map((log) => (
-                                  <div
-                                    key={log.id}
-                                    className="flex items-center justify-between text-xs py-1.5 px-2.5 rounded bg-zinc-950/80 border border-amber-500/20 text-zinc-200 hover:border-amber-500/40 transition"
-                                  >
-                                    <div className="truncate mr-2 flex items-center gap-2">
-                                      <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-500/20 text-amber-300">
-                                        SEM PREVISÃO
-                                      </span>
-                                      <span className="font-medium truncate">{log.description}</span>
-                                      <span className="text-[10px] text-zinc-500">
-                                        ({log.date ? log.date.split('-').reverse().join('/') : ''})
-                                      </span>
-                                    </div>
+                                {unplannedLogs.map((log) => {
+                                  const env = data.budgetEnvelopes.find((e) => e.id === log.categoryId);
+                                  return (
+                                    <div
+                                      key={log.id}
+                                      className="flex flex-col sm:flex-row sm:items-center justify-between text-xs py-2 px-2.5 rounded bg-zinc-950/80 border border-amber-500/20 text-zinc-200 hover:border-amber-500/40 transition gap-2"
+                                    >
+                                      <div className="truncate mr-2 flex items-center gap-2">
+                                        <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-500/20 text-amber-300 shrink-0">
+                                          SEM PREVISÃO
+                                        </span>
+                                        <span className="font-medium truncate">{log.description}</span>
+                                        <span className="text-[10px] text-zinc-500 shrink-0">
+                                          ({log.date ? log.date.split('-').reverse().join('/') : ''})
+                                        </span>
+                                      </div>
 
-                                    <div className="flex items-center gap-2 shrink-0">
-                                      <span className="font-mono-numbers font-bold text-amber-300">
-                                        {formatBRL(log.amount)}
-                                      </span>
+                                      <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+                                        {/* Menu simples e discreto para vincular a uma previsão */}
+                                        <select
+                                          value={log.linkedSubItemId ? `sub_${log.linkedSubItemId}` : 'unplanned'}
+                                          onChange={(e) => {
+                                            const val = e.target.value;
+                                            let linkedSubItemId: string | undefined = undefined;
+                                            let isUnplanned = true;
+                                            if (val.startsWith('sub_')) {
+                                              linkedSubItemId = val.replace('sub_', '');
+                                              isUnplanned = false;
+                                            }
+                                            updateVariableExpenseLog({
+                                              ...log,
+                                              linkedSubItemId,
+                                              isUnplanned,
+                                            });
+                                          }}
+                                          className="px-2 py-1 rounded bg-zinc-900 border border-zinc-700 text-[11px] text-emerald-300 font-medium outline-none focus:border-emerald-500"
+                                          title="Associar a um item previsto desta categoria"
+                                        >
+                                          <option value="unplanned">🔗 Vincular Previsão...</option>
+                                          {env?.subItems && env.subItems.map((sub) => (
+                                            <option key={sub.id} value={`sub_${sub.id}`}>
+                                              {sub.name} ({formatBRL(sub.amount)})
+                                            </option>
+                                          ))}
+                                        </select>
 
-                                      {!isClosed && (
-                                        <div className="flex items-center gap-1 border-l border-zinc-800 pl-1.5">
-                                          <button
-                                            onClick={() => setEditingLog(log)}
-                                            className="text-zinc-400 hover:text-white p-1 transition"
-                                            title="Editar / Vincular a uma previsão"
-                                          >
-                                            <Edit2 className="w-3.5 h-3.5" />
-                                          </button>
-                                          <button
-                                            onClick={() => {
-                                              setDeleteConfirm({
-                                                title: 'Remover Lançamento de Gasto Real',
-                                                message: `Deseja realmente remover o lançamento "${log.description}" no valor de ${formatBRL(log.amount)}?`,
-                                                onConfirm: () => deleteVariableExpenseLog(log.id),
-                                              });
-                                            }}
-                                            className="text-zinc-400 hover:text-rose-400 p-1 transition"
-                                            title="Remover lançamento"
-                                          >
-                                            <Trash2 className="w-3.5 h-3.5" />
-                                          </button>
-                                        </div>
-                                      )}
+                                        <span className="font-mono-numbers font-bold text-amber-300">
+                                          {formatBRL(log.amount)}
+                                        </span>
+
+                                        {!isClosed && (
+                                          <div className="flex items-center gap-1 border-l border-zinc-800 pl-1.5">
+                                            <button
+                                              onClick={() => setEditingLog(log)}
+                                              className="text-zinc-400 hover:text-white p-1 transition"
+                                              title="Editar lançamento"
+                                            >
+                                              <Edit2 className="w-3.5 h-3.5" />
+                                            </button>
+                                            <button
+                                              onClick={() => {
+                                                setDeleteConfirm({
+                                                  title: 'Remover Lançamento de Gasto Real',
+                                                  message: `Deseja realmente remover o lançamento "${log.description}" no valor de ${formatBRL(log.amount)}?`,
+                                                  onConfirm: () => deleteVariableExpenseLog(log.id),
+                                                });
+                                              }}
+                                              className="text-zinc-400 hover:text-rose-400 p-1 transition"
+                                              title="Remover lançamento"
+                                            >
+                                              <Trash2 className="w-3.5 h-3.5" />
+                                            </button>
+                                          </div>
+                                        )}
+                                      </div>
                                     </div>
-                                  </div>
-                                ))}
+                                  );
+                                })}
 
                                 {unplannedCards.map((tx) => (
                                   <div

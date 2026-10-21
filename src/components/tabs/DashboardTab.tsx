@@ -97,7 +97,7 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
     .filter((tx) => tx.type === 'recurring' && !tx.isPaused)
     .reduce((acc, curr) => acc + curr.installmentAmount, 0);
 
-  // Status of Paid vs Pending Bills for Selected Month
+  // Status of Paid vs Pending Bills for Selected Month (Expenses + Budget Subitems Forecasts vs Linked Expenses + Credit Card Bills)
   let billsPaidCount = 0;
   let billsPaidAmount = 0;
   let billsPendingCount = 0;
@@ -134,6 +134,47 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
         billsPendingCount++;
         billsPendingAmount += exp.amount;
       }
+    }
+  });
+
+  // Budget Subitems (Previsões de despesas nas categorias) compared with linked expenses
+  const monthLogs = data.variableExpenseLogs.filter((l) => l.month === selectedMonth);
+  
+  data.budgetEnvelopes.forEach((env) => {
+    const lowerCategoryName = env.name.trim().toLowerCase();
+    
+    const cardTxForEnv = data.cardTransactions.filter((tx) => {
+      if (tx.isPaused) return false;
+      const matchesCategory = tx.category.trim().toLowerCase() === lowerCategoryName || tx.category === env.id;
+      if (!matchesCategory) return false;
+      if (tx.type === 'recurring') return getMonthDiff(tx.startMonth, selectedMonth) >= 0;
+      if (tx.type === 'installment') return getInstallmentInfo(tx.startMonth, tx.totalInstallments, selectedMonth).isActive;
+      if (tx.type === 'single') return tx.startMonth === selectedMonth;
+      return false;
+    });
+
+    if (env.subItems && env.subItems.length > 0) {
+      env.subItems.forEach((sub) => {
+        const linkedLogs = monthLogs.filter((l) => l.linkedSubItemId === sub.id);
+        const linkedCards = cardTxForEnv.filter((tx) => tx.linkedSubItemId === sub.id);
+        const spentOnSub =
+          linkedLogs.reduce((acc, l) => acc + l.amount, 0) +
+          linkedCards.reduce((acc, t) => acc + t.installmentAmount, 0);
+
+        if (sub.amount > 0) {
+          if (spentOnSub >= sub.amount) {
+            billsPaidCount++;
+            billsPaidAmount += sub.amount;
+          } else if (spentOnSub > 0) {
+            billsPaidAmount += spentOnSub;
+            billsPendingCount++;
+            billsPendingAmount += (sub.amount - spentOnSub);
+          } else {
+            billsPendingCount++;
+            billsPendingAmount += sub.amount;
+          }
+        }
+      });
     }
   });
 
