@@ -67,6 +67,8 @@ function MainApp({ currentUser }: MainAppProps) {
   const [newTxDefaultCategory, setNewTxDefaultCategory] = useState<string | undefined>();
   const [isQuickExpenseOpen, setIsQuickExpenseOpen] = useState(false);
   const [quickExpenseEnvelopeId, setQuickExpenseEnvelopeId] = useState<string | undefined>();
+  const [quickExpenseSubItemId, setQuickExpenseSubItemId] = useState<string | undefined>();
+  const [quickExpenseExpenseId, setQuickExpenseExpenseId] = useState<string | undefined>();
   const [isRealInvoiceModalOpen, setIsRealInvoiceModalOpen] = useState(false);
   const [realInvoiceCardId, setRealInvoiceCardId] = useState<string>('');
   const [isBackupModalOpen, setIsBackupModalOpen] = useState(false);
@@ -79,8 +81,10 @@ function MainApp({ currentUser }: MainAppProps) {
     setIsNewTxModalOpen(true);
   };
 
-  const handleOpenQuickExpense = (envelopeId?: string) => {
+  const handleOpenQuickExpense = (envelopeId?: string, subItemId?: string, expenseId?: string) => {
     setQuickExpenseEnvelopeId(envelopeId);
+    setQuickExpenseSubItemId(subItemId);
+    setQuickExpenseExpenseId(expenseId);
     setIsQuickExpenseOpen(true);
   };
 
@@ -286,6 +290,8 @@ function MainApp({ currentUser }: MainAppProps) {
         isOpen={isQuickExpenseOpen}
         onClose={() => setIsQuickExpenseOpen(false)}
         defaultEnvelopeId={quickExpenseEnvelopeId}
+        defaultSubItemId={quickExpenseSubItemId}
+        defaultExpenseId={quickExpenseExpenseId}
       />
 
       <RealInvoiceModal

@@ -112,6 +112,11 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
   };
 
   // Filtered lists
+  // Horizon view state: 3 (trimestral), 6 (semestral), 12 (anual)
+  const [horizonMonths, setHorizonMonths] = useState<number>(12);
+
+  const displayedSummaries = summaries.slice(0, horizonMonths);
+
   const filteredIncomes = data.incomes.filter(
     (inc) => scopeFilter === 'ALL' || inc.scope === scopeFilter
   );
@@ -131,17 +136,51 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
   return (
     <div className="space-y-4 pb-12">
       {/* Matrix Controls & Summary */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-xl bg-zinc-900/90 border border-zinc-800">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 p-4 rounded-xl bg-zinc-900/90 border border-zinc-800">
         <div>
           <h2 className="text-base font-bold text-white flex items-center gap-2">
-            Matriz Anual de Fluxo de Caixa (Super Planilha)
+            Matriz de Fluxo de Caixa
           </h2>
           <p className="text-xs text-zinc-400">
             Visão consolidada mês a mês. O saldo de cada mês alimenta automaticamente o próximo.
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* 3 Botões Discretos de Horizonte Temporal (Trimestral, Semestral, Anual) */}
+          <div className="flex items-center bg-zinc-950 p-1 rounded-lg border border-zinc-800">
+            <button
+              onClick={() => setHorizonMonths(3)}
+              className={`px-2.5 py-1 rounded-md text-xs font-medium transition ${
+                horizonMonths === 3
+                  ? 'bg-emerald-500 text-zinc-950 font-bold shadow'
+                  : 'text-zinc-400 hover:text-white'
+              }`}
+            >
+              Trimestral (3M)
+            </button>
+            <button
+              onClick={() => setHorizonMonths(6)}
+              className={`px-2.5 py-1 rounded-md text-xs font-medium transition ${
+                horizonMonths === 6
+                  ? 'bg-emerald-500 text-zinc-950 font-bold shadow'
+                  : 'text-zinc-400 hover:text-white'
+              }`}
+            >
+              Semestral (6M)
+            </button>
+            <button
+              onClick={() => setHorizonMonths(12)}
+              className={`px-2.5 py-1 rounded-md text-xs font-medium transition ${
+                horizonMonths === 12
+                  ? 'bg-emerald-500 text-zinc-950 font-bold shadow'
+                  : 'text-zinc-400 hover:text-white'
+              }`}
+            >
+              Anual (12M)
+            </button>
+          </div>
+
           <button
             onClick={expandAll}
             className="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition"
@@ -153,13 +192,6 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
             className="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition"
           >
             Recolher
-          </button>
-          <button
-            onClick={onOpenNewTransaction}
-            className="px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-500 hover:bg-emerald-400 text-zinc-950 transition flex items-center gap-1 shadow-sm"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Adicionar Linha</span>
           </button>
         </div>
       </div>
@@ -174,7 +206,7 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
                 <th className="sticky left-0 z-20 bg-zinc-900 py-3 px-4 font-bold text-zinc-300 w-72 min-w-[280px] shadow-[2px_0_5px_rgba(0,0,0,0.5)]">
                   Estrutura de Contas / Linhas
                 </th>
-                {summaries.map((s) => {
+                {displayedSummaries.map((s) => {
                   const isSelected = s.month === selectedMonth;
                   const isVigente = s.month === vigenteMonth;
                   return (
@@ -224,7 +256,7 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
                     <span>BALANÇO FINAL DO MÊS</span>
                   </div>
                 </td>
-                {summaries.map((s) => {
+                {displayedSummaries.map((s) => {
                   const isSelected = s.month === selectedMonth;
                   return (
                     <td
@@ -250,7 +282,7 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
                   </div>
                   <span className="text-[10px] text-zinc-500 font-normal">Início</span>
                 </td>
-                {summaries.map((s) => {
+                {displayedSummaries.map((s) => {
                   const isNeg = s.previousBalance < 0;
                   return (
                     <td
@@ -294,7 +326,7 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
                     {filteredIncomes.length} fontes
                   </span>
                 </td>
-                {summaries.map((s) => (
+                {displayedSummaries.map((s) => (
                   <td
                     key={s.month}
                     onClick={(e) => {
@@ -324,7 +356,7 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
                         </span>
                       </div>
                     </td>
-                    {summaries.map((s) => (
+                    {displayedSummaries.map((s) => (
                       <td
                         key={s.month}
                         onClick={() => handleCellClick(s.month, 'closing')}
@@ -357,7 +389,7 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
                           </span>
                         </div>
                       </td>
-                      {summaries.map((s) => {
+                      {displayedSummaries.map((s) => {
                         let amount = 0;
                         if (inc.type === 'fixed') {
                           if (getMonthDiff(inc.startMonth || '2025-12', s.month) >= 0) {
@@ -414,7 +446,7 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
                     Consolidado
                   </span>
                 </td>
-                {summaries.map((s) => (
+                {displayedSummaries.map((s) => (
                   <td
                     key={s.month}
                     onClick={(e) => {
@@ -441,7 +473,7 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
                     </span>
                   </div>
                 </td>
-                {summaries.map((s) => (
+                {displayedSummaries.map((s) => (
                   <td
                     key={s.month}
                     onClick={() => handleCellClick(s.month, 'closing')}
@@ -479,7 +511,7 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
                         {data.budgetEnvelopes.length} categorias
                       </span>
                     </td>
-                    {summaries.map((s) => (
+                    {displayedSummaries.map((s) => (
                       <td
                         key={s.month}
                         onClick={(e) => {
@@ -501,17 +533,26 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
                     ];
 
                     const registeredNames = new Set(data.budgetEnvelopes.map((e) => e.name.trim().toLowerCase()));
+                    const registeredIds = new Set(data.budgetEnvelopes.map((e) => e.id));
 
                     // Discover extra categories
                     const extraCategoryNames = new Set<string>();
                     data.variableExpenseLogs.forEach((l) => {
-                      if (l.categoryId && !registeredNames.has(l.categoryId.trim().toLowerCase())) {
-                        extraCategoryNames.add(l.categoryId.trim());
+                      if (l.categoryId) {
+                        const cat = l.categoryId.trim();
+                        if (registeredIds.has(cat)) return;
+                        if (!registeredNames.has(cat.toLowerCase()) && !cat.startsWith('env-')) {
+                          extraCategoryNames.add(cat);
+                        }
                       }
                     });
                     data.cardTransactions.forEach((tx) => {
-                      if (!tx.isPaused && tx.category && !registeredNames.has(tx.category.trim().toLowerCase())) {
-                        extraCategoryNames.add(tx.category.trim());
+                      if (!tx.isPaused && tx.category) {
+                        const cat = tx.category.trim();
+                        if (registeredIds.has(cat)) return;
+                        if (!registeredNames.has(cat.toLowerCase()) && !cat.startsWith('env-')) {
+                          extraCategoryNames.add(cat);
+                        }
                       }
                     });
 
@@ -541,7 +582,7 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
                             </span>
                           </div>
                         </td>
-                        {summaries.map((s) => {
+                        {displayedSummaries.map((s) => {
                           const lowerName = env.name.trim().toLowerCase();
 
                           // Active fixed/installment expenses in this category for s.month
@@ -664,7 +705,7 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
                                 </span>
                               </div>
                             </td>
-                            {summaries.map((s) => {
+                            {displayedSummaries.map((s) => {
                               const unmapped = Object.values(s.cardUnmappedDiffByCard).reduce((a, b) => a + b, 0);
                               return (
                                 <td
@@ -704,7 +745,7 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
                     {filteredCards.length} cartões
                   </span>
                 </td>
-                {summaries.map((s) => (
+                {displayedSummaries.map((s) => (
                   <td
                     key={s.month}
                     onClick={(e) => {
@@ -737,7 +778,7 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
                         </span>
                       </div>
                     </td>
-                    {summaries.map((s) => {
+                    {displayedSummaries.map((s) => {
                       const total = s.cardTotalsByCard[card.id] || 0;
                       const diff = s.cardUnmappedDiffByCard[card.id] || 0;
                       return (

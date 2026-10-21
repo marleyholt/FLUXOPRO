@@ -260,11 +260,13 @@ export function calculateForecast(
     // 4. Categorias & Envelopes de Despesas (Integrando Contas Fixas + Variáveis)
     let variableEnvelopes = 0;
     const processedCategoryNames = new Set<string>();
+    const processedCategoryIds = new Set<string>();
 
     // Process registered budget envelopes
     data.budgetEnvelopes.forEach((env) => {
       const lowerName = env.name.trim().toLowerCase();
       processedCategoryNames.add(lowerName);
+      processedCategoryIds.add(env.id);
 
       // Active expenses in this category
       const expSum = activeExpensesByCat[lowerName] || activeExpensesByCat[env.id] || 0;
@@ -309,19 +311,21 @@ export function calculateForecast(
       variableEnvelopes += effectiveAmount;
     });
 
-    // Discover extra categories from expenses, logs or card tx
+    // Discover extra categories from expenses, logs or card tx (strictly real category names, never IDs)
     const extraCategories = new Set<string>();
 
     Object.keys(activeExpensesByCat).forEach((catLower) => {
-      if (!processedCategoryNames.has(catLower)) {
+      if (!processedCategoryNames.has(catLower) && !processedCategoryIds.has(catLower)) {
         extraCategories.add(catLower);
       }
     });
 
     data.variableExpenseLogs.forEach((l) => {
       if (l.month === month && l.categoryId) {
-        const lower = l.categoryId.trim().toLowerCase();
-        if (!processedCategoryNames.has(lower)) {
+        const cat = l.categoryId.trim();
+        if (processedCategoryIds.has(cat)) return; // Already part of registered envelope
+        const lower = cat.toLowerCase();
+        if (!processedCategoryNames.has(lower) && !cat.startsWith('env-')) {
           extraCategories.add(lower);
         }
       }
@@ -329,8 +333,10 @@ export function calculateForecast(
 
     data.cardTransactions.forEach((tx) => {
       if (!tx.isPaused && tx.category) {
-        const lower = tx.category.trim().toLowerCase();
-        if (!processedCategoryNames.has(lower)) {
+        const cat = tx.category.trim();
+        if (processedCategoryIds.has(cat)) return;
+        const lower = cat.toLowerCase();
+        if (!processedCategoryNames.has(lower) && !cat.startsWith('env-')) {
           let activeInMonth = false;
           if (tx.type === 'recurring') activeInMonth = getMonthDiff(tx.startMonth, month) >= 0;
           else if (tx.type === 'installment') activeInMonth = getInstallmentInfo(tx.startMonth, tx.totalInstallments, month).isActive;

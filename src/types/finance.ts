@@ -54,6 +54,9 @@ export interface VariableExpenseLog {
   amount: number;
   description: string;
   date: string; // YYYY-MM-DD
+  linkedSubItemId?: string; // ID do subitem de previsão vinculado
+  linkedExpenseId?: string; // ID da conta/despesa de previsão vinculada (de data.expenses)
+  isUnplanned?: boolean; // Se true, marcado como despesa sem previsão
 }
 
 export interface BankAccountConfig {
@@ -103,6 +106,9 @@ export interface CardTransaction {
   isPaused?: boolean;
   importedFromCsv?: boolean;
   transactionDate?: string; // Data exata da compra no cartão (ex: 2026-01-15)
+  linkedSubItemId?: string; // ID do subitem de previsão vinculado
+  linkedExpenseId?: string; // ID da conta/despesa de previsão vinculada
+  isUnplanned?: boolean; // Se true, marcado como despesa sem previsão
 }
 
 export interface MonthSummary {

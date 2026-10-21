@@ -69,6 +69,7 @@ export const CardsTab: React.FC<CardsTabProps> = ({
   const [editCategory, setEditCategory] = useState('');
   const [editType, setEditType] = useState<'recurring' | 'installment' | 'single'>('installment');
   const [editRemainingInstallments, setEditRemainingInstallments] = useState('1');
+  const [editLinkedSubItemId, setEditLinkedSubItemId] = useState<string>('unplanned');
 
   // Seleção e Classificação em Lote
   const [selectedTxIds, setSelectedTxIds] = useState<Set<string>>(new Set());
@@ -192,6 +193,7 @@ export const CardsTab: React.FC<CardsTabProps> = ({
     setEditAmount(String(tx.installmentAmount));
     setEditCategory(tx.category || 'Outros');
     setEditType(tx.type);
+    setEditLinkedSubItemId(tx.linkedSubItemId ? `sub_${tx.linkedSubItemId}` : 'unplanned');
 
     if (tx.type === 'installment') {
       const instInfo = getInstallmentInfo(tx.startMonth, tx.totalInstallments, selectedMonth);
@@ -227,6 +229,13 @@ export const CardsTab: React.FC<CardsTabProps> = ({
       updatedTotalInstallments = remaining;
     }
 
+    let linkedSubItemId: string | undefined = undefined;
+    let isUnplanned = true;
+    if (editLinkedSubItemId.startsWith('sub_')) {
+      linkedSubItemId = editLinkedSubItemId.replace('sub_', '');
+      isUnplanned = false;
+    }
+
     const updatedTx: CardTransaction = {
       ...editingTx,
       description: editDescription.trim(),
@@ -235,6 +244,8 @@ export const CardsTab: React.FC<CardsTabProps> = ({
       type: editType,
       startMonth: updatedStartMonth,
       totalInstallments: updatedTotalInstallments,
+      linkedSubItemId,
+      isUnplanned,
     };
 
     updateCardTransaction(updatedTx);
@@ -843,6 +854,43 @@ export const CardsTab: React.FC<CardsTabProps> = ({
                     ))}
                   </select>
                 </div>
+              </div>
+
+              {/* Vínculo com a Previsão (Previsão & Controle) */}
+              <div className="space-y-1 p-3 rounded-xl bg-zinc-900/60 border border-zinc-800">
+                <label className="font-semibold text-emerald-300 block mb-1">
+                  Vincular ao Item Previsto (Previsão & Controle)
+                </label>
+                <select
+                  value={editLinkedSubItemId}
+                  onChange={(e) => setEditLinkedSubItemId(e.target.value)}
+                  className="w-full px-2.5 py-2 rounded-lg bg-zinc-950 border border-zinc-700 text-white outline-none focus:border-emerald-500 text-xs"
+                >
+                  <option value="unplanned">
+                    ⚠️ Sem previsão específica (Gasto Não Previsto / Extra)
+                  </option>
+                  {(() => {
+                    // Find envelope matching editCategory
+                    const matchedEnvelope = data.budgetEnvelopes.find(
+                      (e) => e.name.trim().toLowerCase() === editCategory.trim().toLowerCase() || e.id === editCategory
+                    );
+                    if (!matchedEnvelope || !matchedEnvelope.subItems || matchedEnvelope.subItems.length === 0) {
+                      return null;
+                    }
+                    return (
+                      <optgroup label={`Subitens do Envelope "${matchedEnvelope.name}"`}>
+                        {matchedEnvelope.subItems.map((sub) => (
+                          <option key={sub.id} value={`sub_${sub.id}`}>
+                            {sub.name} (Previsto: {formatBRL(sub.amount)})
+                          </option>
+                        ))}
+                      </optgroup>
+                    );
+                  })()}
+                </select>
+                <p className="text-[10px] text-zinc-400 mt-1">
+                  Associe este gasto de cartão ao subitem correspondente para abater da previsão e evitar duplicidade.
+                </p>
               </div>
 
               <div className="space-y-1">

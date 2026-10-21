@@ -32,7 +32,7 @@ import { formatBRL, getMonthDiff, getInstallmentInfo } from '../../utils/calcula
 import { Expense, VariableExpenseLog } from '../../types/finance';
 
 interface MonthlyControlTabProps {
-  onOpenQuickExpense: (envelopeId?: string) => void;
+  onOpenQuickExpense: (envelopeId?: string, subItemId?: string, expenseId?: string) => void;
   onOpenNewTransaction: () => void;
 }
 
@@ -592,24 +592,33 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
                 ];
 
                 const registeredNames = new Set(data.budgetEnvelopes.map((e) => e.name.trim().toLowerCase()));
+                const registeredIds = new Set(data.budgetEnvelopes.map((e) => e.id));
 
-                // Discover extra categories present in logs or card transactions for selectedMonth
+                // Discover extra categories present in logs or card transactions for selectedMonth (never treat envelope IDs as categories)
                 const extraCategoryNames = new Set<string>();
                 data.variableExpenseLogs.forEach((l) => {
-                  if (l.month === selectedMonth && l.categoryId && !registeredNames.has(l.categoryId.trim().toLowerCase())) {
-                    extraCategoryNames.add(l.categoryId.trim());
+                  if (l.month === selectedMonth && l.categoryId) {
+                    const cat = l.categoryId.trim();
+                    if (registeredIds.has(cat)) return;
+                    if (!registeredNames.has(cat.toLowerCase()) && !cat.startsWith('env-')) {
+                      extraCategoryNames.add(cat);
+                    }
                   }
                 });
 
                 data.cardTransactions.forEach((tx) => {
-                  if (!tx.isPaused && tx.category && !registeredNames.has(tx.category.trim().toLowerCase())) {
-                    let activeInMonth = false;
-                    if (tx.type === 'recurring') activeInMonth = getMonthDiff(tx.startMonth, selectedMonth) >= 0;
-                    else if (tx.type === 'installment') activeInMonth = getInstallmentInfo(tx.startMonth, tx.totalInstallments, selectedMonth).isActive;
-                    else if (tx.type === 'single') activeInMonth = tx.startMonth === selectedMonth;
+                  if (!tx.isPaused && tx.category) {
+                    const cat = tx.category.trim();
+                    if (registeredIds.has(cat)) return;
+                    if (!registeredNames.has(cat.toLowerCase()) && !cat.startsWith('env-')) {
+                      let activeInMonth = false;
+                      if (tx.type === 'recurring') activeInMonth = getMonthDiff(tx.startMonth, selectedMonth) >= 0;
+                      else if (tx.type === 'installment') activeInMonth = getInstallmentInfo(tx.startMonth, tx.totalInstallments, selectedMonth).isActive;
+                      else if (tx.type === 'single') activeInMonth = tx.startMonth === selectedMonth;
 
-                    if (activeInMonth) {
-                      extraCategoryNames.add(tx.category.trim());
+                      if (activeInMonth) {
+                        extraCategoryNames.add(cat);
+                      }
                     }
                   }
                 });
@@ -933,43 +942,180 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
 
                     {/* If expanded, display Subcategories and Detailed Expense Logs (Minimizado por padrão) */}
                     {isExpanded && (
-                      <div className="space-y-3 pt-2 border-t border-zinc-900">
-                        {/* Subcategorias / Itens do Teto Orçado */}
-                        <div className="space-y-2 bg-zinc-900/40 p-3 rounded-xl border border-zinc-800/60">
+                      <div className="space-y-4 pt-3 border-t border-zinc-900">
+                        {/* Subcategorias / Itens do Teto Orçado com Rastreamento de Pagamento */}
+                        <div className="space-y-3 bg-zinc-900/40 p-3.5 rounded-xl border border-zinc-800/60">
                           <div className="flex items-center justify-between">
-                            <span className="text-[11px] font-bold text-emerald-400 block uppercase tracking-wider">
-                              Subcategorias / Itens da Categoria ({env.subItems?.length || 0}):
-                            </span>
+                            <div>
+                              <span className="text-[11px] font-bold text-emerald-400 block uppercase tracking-wider">
+                                Previsão & Controle de Subitens ({env.subItems?.length || 0}):
+                              </span>
+                              <p className="text-[10px] text-zinc-400">
+                                Cada item planejado deduz os gastos reais vinculados a ele para evitar duplicidades.
+                              </p>
+                            </div>
                             {env.subItems && env.subItems.length > 0 && (
-                              <span className="text-[11px] font-mono-numbers text-emerald-300 font-bold">
-                                Soma Teto = {formatBRL(subItemsSum)}
+                              <span className="text-[11px] font-mono-numbers text-emerald-300 font-bold bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                                Teto Somado = {formatBRL(subItemsSum)}
                               </span>
                             )}
                           </div>
 
                           {(!env.subItems || env.subItems.length === 0) ? (
-                            <p className="text-[11px] text-zinc-500 italic">
-                              Nenhum item inserido nesta categoria. Adicione subcategorias abaixo (ex: Escola dos Filhos, Faculdade) para formar o teto de gastos automaticamente.
+                            <p className="text-[11px] text-zinc-500 italic py-1">
+                              Nenhum item inserido nesta categoria. Adicione subcategorias abaixo (ex: Luz, Condomínio, Supermercado) para formar o teto de gastos e poder vincular pagamentos.
                             </p>
                           ) : (
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                              {env.subItems.map((sub) => (
-                                <div key={sub.id} className="flex items-center justify-between text-xs py-1.5 px-3 rounded-lg bg-zinc-950 border border-zinc-800 text-zinc-200">
-                                  <span className="font-medium truncate mr-2">{sub.name}</span>
-                                  <div className="flex items-center gap-2 shrink-0 font-mono-numbers font-semibold text-emerald-400">
-                                    <span>{formatBRL(sub.amount)}</span>
-                                    {!isClosed && (
-                                      <button
-                                        onClick={() => deleteBudgetSubItem(env.id, sub.id)}
-                                        className="text-zinc-500 hover:text-rose-400 p-1 transition"
-                                        title="Excluir subcategoria"
-                                      >
-                                        <Trash2 className="w-3.5 h-3.5" />
-                                      </button>
+                            <div className="space-y-2.5">
+                              {env.subItems.map((sub) => {
+                                const linkedLogs = logs.filter((l) => l.linkedSubItemId === sub.id);
+                                const linkedCardTxs = cardTxForEnv.filter((tx) => tx.linkedSubItemId === sub.id);
+                                const spentOnSub =
+                                  linkedLogs.reduce((acc, l) => acc + l.amount, 0) +
+                                  linkedCardTxs.reduce((acc, t) => acc + t.installmentAmount, 0);
+                                const diff = sub.amount - spentOnSub;
+                                const isOver = diff < 0;
+                                const isPaidFull = diff === 0 && spentOnSub > 0;
+                                const isPartial = spentOnSub > 0 && diff > 0;
+                                const isUnpaid = spentOnSub === 0;
+
+                                return (
+                                  <div
+                                    key={sub.id}
+                                    className="p-3 rounded-xl bg-zinc-950/90 border border-zinc-800/90 space-y-2 hover:border-zinc-700 transition"
+                                  >
+                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                      <div className="flex items-center gap-2">
+                                        <span className="font-bold text-zinc-100 text-xs">{sub.name}</span>
+                                        {/* Status Badge */}
+                                        {isPaidFull && (
+                                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1">
+                                            <CheckCircle2 className="w-3 h-3 text-emerald-400" /> Quitado Integral
+                                          </span>
+                                        )}
+                                        {isPartial && (
+                                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                                            🟡 Parcial (Resta: {formatBRL(diff)})
+                                          </span>
+                                        )}
+                                        {isOver && (
+                                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40">
+                                            🔴 Estourado (+{formatBRL(Math.abs(diff))})
+                                          </span>
+                                        )}
+                                        {isUnpaid && (
+                                          <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-zinc-800 text-zinc-400 border border-zinc-700">
+                                            ⏳ Pendente
+                                          </span>
+                                        )}
+                                      </div>
+
+                                      <div className="flex items-center gap-3 self-end sm:self-auto text-xs font-mono-numbers">
+                                        <div className="text-right">
+                                          <span className="text-[10px] text-zinc-500 block">Previsto / Pago</span>
+                                          <span className="font-semibold text-zinc-300">
+                                            {formatBRL(sub.amount)}
+                                          </span>
+                                          <span className="text-zinc-500 mx-1">/</span>
+                                          <span className={`font-bold ${spentOnSub > 0 ? (isOver ? 'text-rose-400' : 'text-emerald-400') : 'text-zinc-500'}`}>
+                                            {formatBRL(spentOnSub)}
+                                          </span>
+                                        </div>
+
+                                        {!isClosed && (
+                                          <div className="flex items-center gap-1 border-l border-zinc-800 pl-2">
+                                            <button
+                                              onClick={() => onOpenQuickExpense(env.id, sub.id)}
+                                              className="px-2.5 py-1 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-semibold flex items-center gap-1 transition"
+                                              title={`Lançar pagamento para "${sub.name}"`}
+                                            >
+                                              <Plus className="w-3 h-3" />
+                                              <span>{spentOnSub > 0 ? '+ Adicionar' : 'Pagar'}</span>
+                                            </button>
+
+                                            <button
+                                              onClick={() => deleteBudgetSubItem(env.id, sub.id)}
+                                              className="text-zinc-500 hover:text-rose-400 p-1 rounded hover:bg-zinc-900 transition"
+                                              title="Excluir subcategoria"
+                                            >
+                                              <Trash2 className="w-3.5 h-3.5" />
+                                            </button>
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+
+                                    {/* Linked Payments Detail for this subitem */}
+                                    {(linkedLogs.length > 0 || linkedCardTxs.length > 0) && (
+                                      <div className="pt-1.5 border-t border-zinc-900 space-y-1">
+                                        <span className="text-[10px] text-zinc-500 font-semibold uppercase tracking-wider block">
+                                          Lançamentos Vinculados ({linkedLogs.length + linkedCardTxs.length}):
+                                        </span>
+                                        <div className="space-y-1 pl-1">
+                                          {linkedLogs.map((log) => (
+                                            <div
+                                              key={log.id}
+                                              className="flex items-center justify-between text-xs py-1 px-2 rounded bg-zinc-900/60 hover:bg-zinc-900 text-zinc-300 transition"
+                                            >
+                                              <div className="truncate mr-2 flex items-center gap-1.5">
+                                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                                                <span className="font-medium text-zinc-200 truncate">{log.description}</span>
+                                                <span className="text-[10px] text-zinc-500">
+                                                  ({log.date ? log.date.split('-').reverse().join('/') : ''})
+                                                </span>
+                                              </div>
+                                              <div className="flex items-center gap-2 shrink-0">
+                                                <span className="font-mono-numbers font-semibold text-emerald-400">
+                                                  {formatBRL(log.amount)}
+                                                </span>
+                                                {!isClosed && (
+                                                  <div className="flex items-center gap-1 border-l border-zinc-800 pl-1.5">
+                                                    <button
+                                                      onClick={() => setEditingLog(log)}
+                                                      className="text-zinc-400 hover:text-white p-0.5 transition"
+                                                      title="Editar lançamento"
+                                                    >
+                                                      <Edit2 className="w-3 h-3" />
+                                                    </button>
+                                                    <button
+                                                      onClick={() => {
+                                                        setDeleteConfirm({
+                                                          title: 'Remover Lançamento',
+                                                          message: `Deseja realmente remover o lançamento "${log.description}" (${formatBRL(log.amount)})?`,
+                                                          onConfirm: () => deleteVariableExpenseLog(log.id),
+                                                        });
+                                                      }}
+                                                      className="text-zinc-400 hover:text-rose-400 p-0.5 transition"
+                                                      title="Remover lançamento"
+                                                    >
+                                                      <Trash2 className="w-3 h-3" />
+                                                    </button>
+                                                  </div>
+                                                )}
+                                              </div>
+                                            </div>
+                                          ))}
+
+                                          {linkedCardTxs.map((tx) => (
+                                            <div
+                                              key={`card-linked-${tx.id}`}
+                                              className="flex items-center justify-between text-xs py-1 px-2 rounded bg-indigo-950/20 border border-indigo-500/20 text-indigo-300 transition"
+                                            >
+                                              <div className="truncate mr-2 flex items-center gap-1.5">
+                                                <CreditCard className="w-3 h-3 text-indigo-400" />
+                                                <span className="font-medium truncate">{tx.description}</span>
+                                              </div>
+                                              <span className="font-mono-numbers font-semibold text-indigo-300">
+                                                {formatBRL(tx.installmentAmount)}
+                                              </span>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
                                     )}
                                   </div>
-                                </div>
-                              ))}
+                                );
+                              })}
                             </div>
                           )}
 
@@ -988,18 +1134,34 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
                             >
                               <input
                                 type="text"
-                                placeholder="Nome do item (ex: Escola dos Filhos, Faculdade)..."
+                                placeholder="Nome do item (ex: Luz, Internet, Combustível)..."
                                 value={subItemInputs[env.id]?.name || ''}
-                                onChange={(e) => setSubItemInputs({ ...subItemInputs, [env.id]: { ...(subItemInputs[env.id] || { amount: '' }), name: e.target.value } })}
+                                onChange={(e) =>
+                                  setSubItemInputs({
+                                    ...subItemInputs,
+                                    [env.id]: {
+                                      ...(subItemInputs[env.id] || { amount: '' }),
+                                      name: e.target.value,
+                                    },
+                                  })
+                                }
                                 className="flex-1 w-full px-2.5 py-1.5 rounded-lg bg-zinc-950 border border-zinc-700 text-xs text-white placeholder-zinc-500 outline-none focus:border-emerald-500"
                               />
                               <input
                                 type="number"
                                 step="0.01"
-                                placeholder="Valor Teto (R$)"
+                                placeholder="Valor Previsto (R$)"
                                 value={subItemInputs[env.id]?.amount || ''}
-                                onChange={(e) => setSubItemInputs({ ...subItemInputs, [env.id]: { ...(subItemInputs[env.id] || { name: '' }), amount: e.target.value } })}
-                                className="w-full sm:w-28 px-2.5 py-1.5 rounded-lg bg-zinc-950 border border-zinc-700 text-xs text-white font-mono-numbers outline-none focus:border-emerald-500"
+                                onChange={(e) =>
+                                  setSubItemInputs({
+                                    ...subItemInputs,
+                                    [env.id]: {
+                                      ...(subItemInputs[env.id] || { name: '' }),
+                                      amount: e.target.value,
+                                    },
+                                  })
+                                }
+                                className="w-full sm:w-32 px-2.5 py-1.5 rounded-lg bg-zinc-950 border border-zinc-700 text-xs text-white font-mono-numbers outline-none focus:border-emerald-500"
                               />
                               <button
                                 type="submit"
@@ -1011,105 +1173,159 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
                           )}
                         </div>
 
-                        {/* Lançamentos do Mês Discriminados em Detalhe */}
-                        <div className="space-y-1.5 pt-1">
-                          <div className="flex items-center justify-between">
-                            <span className="text-[11px] font-semibold text-zinc-400 block">
-                              Lançamentos & Contas do Mês ({activeCategoryExpenses.length + logs.length + cardTxForEnv.length}):
-                            </span>
-                            <span className="text-[10px] text-zinc-400 font-mono-numbers">
-                              Soma Real: {formatBRL(totalSpent)}
-                            </span>
-                          </div>
+                        {/* SEÇÃO DEDICADA: GASTOS SEM PREVISÃO (EXTRAS) NESTA CATEGORIA */}
+                        {(() => {
+                          const unplannedLogs = logs.filter(
+                            (l) => (!l.linkedSubItemId && !l.linkedExpenseId) || l.isUnplanned
+                          );
+                          const unplannedCards = cardTxForEnv.filter(
+                            (tx) => (!tx.linkedSubItemId && !tx.linkedExpenseId) || tx.isUnplanned
+                          );
+                          const unplannedTotal =
+                            unplannedLogs.reduce((acc, l) => acc + l.amount, 0) +
+                            unplannedCards.reduce((acc, t) => acc + t.installmentAmount, 0);
 
-                          {activeCategoryExpenses.length === 0 && logs.length === 0 && cardTxForEnv.length === 0 ? (
-                            <p className="text-[11px] text-zinc-500 italic py-1">
-                              Nenhum gasto registrado nesta categoria em {current.label}.
-                            </p>
-                          ) : (
-                            <div className="max-h-48 overflow-y-auto space-y-1 pr-1">
-                              {/* Display Active Fixed/Installment Expenses in this Category */}
+                          if (unplannedLogs.length === 0 && unplannedCards.length === 0) {
+                            return (
+                              <div className="p-2.5 rounded-xl bg-zinc-900/30 border border-zinc-800/50 flex items-center justify-between text-xs text-zinc-400">
+                                <span className="flex items-center gap-1.5 text-[11px] text-zinc-400">
+                                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                                  Nenhum gasto avulso / sem previsão registrado neste envelope.
+                                </span>
+                                {!isClosed && (
+                                  <button
+                                    onClick={() => onOpenQuickExpense(env.id)}
+                                    className="text-xs text-emerald-400 hover:underline"
+                                  >
+                                    + Lançar Gasto
+                                  </button>
+                                )}
+                              </div>
+                            );
+                          }
+
+                          return (
+                            <div className="space-y-2 bg-amber-950/20 p-3.5 rounded-xl border border-amber-500/30">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 uppercase">
+                                    ⚠️ Gastos Sem Previsão
+                                  </span>
+                                  <span className="text-xs font-bold text-amber-200">
+                                    {unplannedLogs.length + unplannedCards.length} despesa(s) avulsa(s)
+                                  </span>
+                                </div>
+                                <span className="text-xs font-mono-numbers font-bold text-amber-300">
+                                  Total Sem Previsão: {formatBRL(unplannedTotal)}
+                                </span>
+                              </div>
+                              <p className="text-[10px] text-amber-300/80">
+                                Estes gastos foram realizados na categoria, mas não correspondem a nenhuma previsão planejada. Clique em editar para associar a um subitem a qualquer momento.
+                              </p>
+
+                              <div className="space-y-1.5 pt-1">
+                                {unplannedLogs.map((log) => (
+                                  <div
+                                    key={log.id}
+                                    className="flex items-center justify-between text-xs py-1.5 px-2.5 rounded bg-zinc-950/80 border border-amber-500/20 text-zinc-200 hover:border-amber-500/40 transition"
+                                  >
+                                    <div className="truncate mr-2 flex items-center gap-2">
+                                      <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-500/20 text-amber-300">
+                                        SEM PREVISÃO
+                                      </span>
+                                      <span className="font-medium truncate">{log.description}</span>
+                                      <span className="text-[10px] text-zinc-500">
+                                        ({log.date ? log.date.split('-').reverse().join('/') : ''})
+                                      </span>
+                                    </div>
+
+                                    <div className="flex items-center gap-2 shrink-0">
+                                      <span className="font-mono-numbers font-bold text-amber-300">
+                                        {formatBRL(log.amount)}
+                                      </span>
+
+                                      {!isClosed && (
+                                        <div className="flex items-center gap-1 border-l border-zinc-800 pl-1.5">
+                                          <button
+                                            onClick={() => setEditingLog(log)}
+                                            className="text-zinc-400 hover:text-white p-1 transition"
+                                            title="Editar / Vincular a uma previsão"
+                                          >
+                                            <Edit2 className="w-3.5 h-3.5" />
+                                          </button>
+                                          <button
+                                            onClick={() => {
+                                              setDeleteConfirm({
+                                                title: 'Remover Lançamento de Gasto Real',
+                                                message: `Deseja realmente remover o lançamento "${log.description}" no valor de ${formatBRL(log.amount)}?`,
+                                                onConfirm: () => deleteVariableExpenseLog(log.id),
+                                              });
+                                            }}
+                                            className="text-zinc-400 hover:text-rose-400 p-1 transition"
+                                            title="Remover lançamento"
+                                          >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                          </button>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                ))}
+
+                                {unplannedCards.map((tx) => (
+                                  <div
+                                    key={`unplanned-card-${tx.id}`}
+                                    className="flex items-center justify-between text-xs py-1.5 px-2.5 rounded bg-indigo-950/30 border border-indigo-500/30 text-indigo-200"
+                                  >
+                                    <div className="truncate mr-2 flex items-center gap-2">
+                                      <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-indigo-500/30 text-indigo-200">
+                                        CARTÃO • SEM PREVISÃO
+                                      </span>
+                                      <span className="font-medium truncate">{tx.description}</span>
+                                    </div>
+                                    <span className="font-mono-numbers font-bold text-indigo-300">
+                                      {formatBRL(tx.installmentAmount)}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })()}
+
+                        {/* Display Active Fixed/Installment Expenses in this Category (if any) */}
+                        {activeCategoryExpenses.length > 0 && (
+                          <div className="space-y-1.5 pt-1">
+                            <span className="text-[11px] font-semibold text-zinc-400 block">
+                              Contas & Obrigações Fixas ({activeCategoryExpenses.length}):
+                            </span>
+                            <div className="space-y-1">
                               {activeCategoryExpenses.map((exp) => (
                                 <div
                                   key={`fixed-exp-${exp.id}`}
                                   className="flex items-center justify-between text-xs py-1.5 px-2.5 rounded bg-amber-950/20 border border-amber-500/20 text-amber-200"
                                 >
                                   <div className="truncate mr-2 flex items-center gap-1.5">
-                                    <span className="px-1.5 py-0.5 rounded bg-amber-500/30 text-[9px] font-bold text-amber-200">CONTA/OBRIGAÇÃO</span>
+                                    <span className="px-1.5 py-0.5 rounded bg-amber-500/30 text-[9px] font-bold text-amber-200">CONTA FIXA</span>
                                     <span className="font-medium truncate">{exp.title}</span>
                                   </div>
                                   <div className="flex items-center gap-2 shrink-0 font-mono-numbers font-semibold text-amber-300">
                                     <span>{formatBRL(exp.amount)}</span>
-                                    <span className={`text-[10px] px-1 rounded ${exp.paidMonths?.[selectedMonth] ? 'bg-emerald-500/20 text-emerald-300' : 'bg-rose-500/20 text-rose-300'}`}>
+                                    <span
+                                      className={`text-[10px] px-1.5 py-0.2 rounded ${
+                                        exp.paidMonths?.[selectedMonth]
+                                          ? 'bg-emerald-500/20 text-emerald-300'
+                                          : 'bg-rose-500/20 text-rose-300'
+                                      }`}
+                                    >
                                       {exp.paidMonths?.[selectedMonth] ? 'Pago' : 'Pendente'}
                                     </span>
                                   </div>
                                 </div>
                               ))}
-                              {/* Display Card Transactions for this category */}
-                              {cardTxForEnv.map((tx) => (
-                                <div
-                                  key={`card-tx-${tx.id}`}
-                                  className="flex items-center justify-between text-xs py-1.5 px-2.5 rounded bg-indigo-950/30 border border-indigo-500/20 text-indigo-200"
-                                >
-                                  <div className="truncate mr-2 flex items-center gap-1.5">
-                                    <span className="px-1.5 py-0.5 rounded bg-indigo-500/30 text-[9px] font-bold text-indigo-200">CARTÃO</span>
-                                    <span className="font-medium truncate">{tx.description}</span>
-                                  </div>
-                                  <span className="font-mono-numbers font-semibold text-indigo-300">
-                                    {formatBRL(tx.installmentAmount)}
-                                  </span>
-                                </div>
-                              ))}
-
-                              {/* Display Variable Expense Logs */}
-                              {logs.map((log) => (
-                                <div
-                                  key={log.id}
-                                  className="flex items-center justify-between text-xs py-1.5 px-2.5 rounded bg-zinc-900/60 hover:bg-zinc-900 text-zinc-300 transition"
-                                >
-                                  <div className="truncate mr-2">
-                                    <span className="font-medium text-zinc-200 truncate">{log.description}</span>
-                                    <span className="text-[10px] text-zinc-400 ml-2">
-                                      {log.date ? log.date.split('-').reverse().join('/') : ''}
-                                    </span>
-                                  </div>
-
-                                  <div className="flex items-center gap-2 shrink-0">
-                                    <span className="font-mono-numbers font-semibold text-zinc-100">
-                                      {formatBRL(log.amount)}
-                                    </span>
-
-                                    {!isClosed && (
-                                      <div className="flex items-center gap-1 border-l border-zinc-800 pl-1.5">
-                                        <button
-                                          onClick={() => setEditingLog(log)}
-                                          className="text-zinc-400 hover:text-white p-1 transition"
-                                          title="Editar este lançamento"
-                                        >
-                                          <Edit2 className="w-3.5 h-3.5" />
-                                        </button>
-                                        <button
-                                          onClick={() => {
-                                            setDeleteConfirm({
-                                              title: 'Remover Lançamento de Gasto Real',
-                                              message: `Deseja realmente remover o lançamento "${log.description}" no valor de ${formatBRL(log.amount)}?`,
-                                              onConfirm: () => deleteVariableExpenseLog(log.id),
-                                            });
-                                          }}
-                                          className="text-zinc-400 hover:text-rose-400 p-1 transition"
-                                          title="Remover lançamento"
-                                        >
-                                          <Trash2 className="w-3.5 h-3.5" />
-                                        </button>
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                              ))}
                             </div>
-                          )}
-                        </div>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>

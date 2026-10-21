@@ -163,14 +163,72 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [scopeFilter, setScopeFilter] = useState<ScopeType>('ALL');
   const [activeTab, setActiveTab] = useState<'dashboard' | 'matrix' | 'monthly' | 'cards' | 'variables' | 'raiox' | 'closing' | 'simulation' | 'settings' | 'config'>('dashboard');
 
+// Sanitizes envelopes and logs to heal phantom ID categories and prevent duplicates
+function sanitizeAppData(loaded: AppData): AppData {
+  if (!loaded) return loaded;
+  const envelopes = [...(loaded.budgetEnvelopes || [])];
+  const legitEnvelopes = envelopes.filter((e) => !e.name.startsWith('env-'));
+  
+  const idRemap: Record<string, string> = {};
+  envelopes.forEach((e) => {
+    if (e.name.startsWith('env-')) {
+      const match = legitEnvelopes.find((legit) => legit.id === e.name || legit.id === e.id);
+      if (match) {
+        idRemap[e.id] = match.id;
+        idRemap[e.name] = match.id;
+      }
+    }
+  });
+
+  const cleanedEnvelopes = envelopes.reduce((acc: VariableBudgetCategory[], env) => {
+    if (env.name.startsWith('env-')) {
+      const match = legitEnvelopes.find((l) => l.id === env.name || l.id === env.id);
+      if (match) {
+        return acc;
+      } else {
+        acc.push({ ...env, name: 'Despesas Gerais' });
+      }
+    } else {
+      const dup = acc.find((x) => x.name.trim().toLowerCase() === env.name.trim().toLowerCase());
+      if (!dup) {
+        acc.push(env);
+      } else {
+        idRemap[env.id] = dup.id;
+      }
+    }
+    return acc;
+  }, []);
+
+  const cleanedLogs = (loaded.variableExpenseLogs || []).map((log) => {
+    let catId = log.categoryId;
+    if (idRemap[catId]) {
+      catId = idRemap[catId];
+    }
+    const matchByName = cleanedEnvelopes.find(
+      (e) => e.name.trim().toLowerCase() === catId?.trim().toLowerCase()
+    );
+    if (matchByName) {
+      catId = matchByName.id;
+    }
+    return { ...log, categoryId: catId };
+  });
+
+  return {
+    ...loaded,
+    budgetEnvelopes: cleanedEnvelopes,
+    variableExpenseLogs: cleanedLogs,
+  };
+}
+
   // Load initial data
   useEffect(() => {
     let isMounted = true;
     loadAppData().then(({ data: loadedData, isUsingFirebase: remote }) => {
       if (isMounted) {
-        setData(loadedData);
+        const sanitized = sanitizeAppData(loadedData);
+        setData(sanitized);
         setIsUsingFirebase(remote);
-        setSelectedMonth(loadedData.settings.startMonth || '2025-12');
+        setSelectedMonth(sanitized.settings.startMonth || '2025-12');
         setLoading(false);
       }
     });
@@ -183,7 +241,8 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const persistLocally = useCallback(
     (updater: AppData | ((prev: AppData) => AppData)) => {
       setData((prev) => {
-        const nextData = typeof updater === 'function' ? updater(prev) : updater;
+        const rawNext = typeof updater === 'function' ? updater(prev) : updater;
+        const nextData = sanitizeAppData(rawNext);
         saveAppData(nextData);
         return nextData;
       });
@@ -568,8 +627,18 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         console.warn(`Mês ${log.month} está fechado. Operação bloqueada.`);
         return;
       }
+      // Ensure categoryId maps to legitimate envelope ID
+      let targetCategoryId = log.categoryId;
+      const matched = data.budgetEnvelopes.find(
+        (e) => e.id === log.categoryId || e.name.trim().toLowerCase() === log.categoryId?.trim().toLowerCase()
+      );
+      if (matched) {
+        targetCategoryId = matched.id;
+      }
+
       const newLog: VariableExpenseLog = {
         ...log,
+        categoryId: targetCategoryId,
         id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       };
       persistLocally({
@@ -760,15 +829,18 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       if (frequency === 'single') {
         let updatedEnvelopes = [...data.budgetEnvelopes];
         let existingEnv = updatedEnvelopes.find(
-          (e) => e.name.trim().toLowerCase() === category.trim().toLowerCase()
+          (e) =>
+            e.id === category ||
+            e.name.trim().toLowerCase() === category.trim().toLowerCase()
         );
 
         let categoryId = existingEnv?.id;
         if (!existingEnv) {
           categoryId = `env-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`;
+          const cleanName = category.startsWith('env-') ? 'Despesas Gerais' : category;
           const newEnv: VariableBudgetCategory = {
             id: categoryId,
-            name: category,
+            name: cleanName,
             targetAmount: targetEnvelopeAmount || amount,
           };
           updatedEnvelopes.push(newEnv);
