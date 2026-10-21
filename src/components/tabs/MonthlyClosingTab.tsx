@@ -51,6 +51,8 @@ export const MonthlyClosingTab: React.FC = () => {
     isMonthClosed,
     closeMonth,
     reopenMonth,
+    saveToFirebase,
+    isUsingFirebase,
   } = useFinance();
 
   const isClosed = isMonthClosed(selectedMonth);
@@ -60,6 +62,20 @@ export const MonthlyClosingTab: React.FC = () => {
   const nextMonth = addMonths(selectedMonth, 1);
   const nextMonthLabel = getMonthLabel(nextMonth);
   const monthIdx = parseInt(selectedMonth.split('-')[1], 10);
+
+  // Helper function to parse formatted numbers (accepting commas, dots, BR format)
+  const parseFormattedNumber = (val: string | number): number => {
+    if (typeof val === 'number') return isNaN(val) ? 0 : val;
+    if (!val) return 0;
+    let str = val.toString().trim();
+    if (str.includes(',') && str.includes('.')) {
+      str = str.replace(/\./g, '').replace(',', '.');
+    } else if (str.includes(',')) {
+      str = str.replace(',', '.');
+    }
+    const parsed = parseFloat(str);
+    return isNaN(parsed) ? 0 : parsed;
+  };
 
   // Existing closing record for this month
   const existingClosing = data.monthlyClosings?.[selectedMonth];
@@ -84,6 +100,7 @@ export const MonthlyClosingTab: React.FC = () => {
     existingClosing?.notes || ''
   );
   const [savedSuccessMsg, setSavedSuccessMsg] = useState<string | null>(null);
+  const [validationError, setValidationError] = useState<string | null>(null);
 
   // Reopen Modal State
   const [isReopenModalOpen, setIsReopenModalOpen] = useState<boolean>(false);
@@ -91,15 +108,16 @@ export const MonthlyClosingTab: React.FC = () => {
 
   // Sync inputs when selectedMonth or existingClosing changes
   useEffect(() => {
+    setValidationError(null);
     if (existingClosing !== undefined) {
       setRealBankBalance(String(existingClosing.closingRealBalance));
-      setSelectedBankId(existingClosing.bankAccountId || data.bankAccounts?.[0]?.id || 'custom');
+      setSelectedBankId(existingClosing.bankAccountId || data.bankAccounts?.[0]?.id || '');
       setCustomBankName(existingClosing.bankAccountName || '');
       setNegativeSinceDate(existingClosing.negativeSinceDate || `${selectedMonth}-01`);
       setClosingNotes(existingClosing.notes || '');
     } else {
       setRealBankBalance(String(current.previousBalance.toFixed(2)));
-      setSelectedBankId(data.bankAccounts?.[0]?.id || 'custom');
+      setSelectedBankId(data.bankAccounts?.[0]?.id || '');
       setCustomBankName('');
       setNegativeSinceDate(`${selectedMonth}-01`);
       setClosingNotes('');
@@ -169,7 +187,7 @@ export const MonthlyClosingTab: React.FC = () => {
     });
   });
 
-  const parsedBankBalance = parseFloat(realBankBalance) || 0;
+  const parsedBankBalance = parseFormattedNumber(realBankBalance);
   const isOverdraft = parsedBankBalance < 0;
   const projectedBalance = current.finalBalance;
   const difference = parsedBankBalance - projectedBalance;
@@ -190,17 +208,58 @@ export const MonthlyClosingTab: React.FC = () => {
   );
 
   // Save Abertura do Mês & Define Mês Vigente
-  const handleSaveAberturaMonth = (e: React.FormEvent) => {
+  const handleSaveAberturaMonth = async (e: React.FormEvent) => {
     e.preventDefault();
+    setValidationError(null);
+
+    const numericVal = parseFormattedNumber(realBankBalance);
+
+    // Validação 1: Saldo inicial definido e não vazio
+    if (
+      realBankBalance.trim() === '' ||
+      realBankBalance === null ||
+      realBankBalance === undefined ||
+      isNaN(numericVal)
+    ) {
+      setValidationError(
+        'Abertura Bloqueada: Por favor, defina um valor para o saldo inicial do mês.'
+      );
+      return;
+    }
+
+    // Validação 2: Conta bancária selecionada
+    if (!selectedBankId || selectedBankId.trim() === '') {
+      setValidationError(
+        'Abertura Bloqueada: Por favor, selecione qual é a conta bancária de origem/destino.'
+      );
+      return;
+    }
+
+    // Validação 3: Se selecionou 'custom', exigir o nome da conta
+    if (selectedBankId === 'custom' && !customBankName.trim()) {
+      setValidationError(
+        'Abertura Bloqueada: Por favor, digite o nome da conta bancária customizada.'
+      );
+      return;
+    }
+
+    // Validação 4: Se o saldo for negativo, exigir a data
+    if (isOverdraft && !negativeSinceDate) {
+      setValidationError(
+        'Abertura Bloqueada: Selecione desde qual dia o saldo está negativo.'
+      );
+      return;
+    }
+
     saveMonthlyClosing({
       month: selectedMonth,
-      closingRealBalance: parsedBankBalance,
+      closingRealBalance: numericVal,
       projectedBalance,
       adjustmentDifference: difference,
-      isOverdraft,
+      isOverdraft: numericVal < 0,
       bankAccountId: selectedBankId,
       bankAccountName: bankDisplayName,
-      negativeSinceDate: isOverdraft ? negativeSinceDate : undefined,
+      negativeSinceDate: numericVal < 0 ? negativeSinceDate : undefined,
       scheduledReminders: existingClosing?.scheduledReminders || [],
       pushedDebts: existingClosing?.pushedDebts || [],
       notes: closingNotes.trim() || undefined,
@@ -210,8 +269,12 @@ export const MonthlyClosingTab: React.FC = () => {
 
     setVigenteMonth(selectedMonth);
 
+    if (isUsingFirebase) {
+      await saveToFirebase();
+    }
+
     setSavedSuccessMsg(
-      `O mês de ${current.label} foi gravado e definido como MÊS VIGENTE!`
+      `O mês de ${current.label} foi gravado, sincronizado e definido como MÊS VIGENTE!`
     );
     setTimeout(() => setSavedSuccessMsg(null), 5000);
   };
@@ -309,6 +372,16 @@ export const MonthlyClosingTab: React.FC = () => {
       )}
 
       {/* Feedback Messages */}
+      {validationError && (
+        <div className="p-3.5 rounded-xl bg-rose-950/50 border border-rose-500/60 text-rose-200 text-xs flex items-start gap-2.5 shadow-md animate-in fade-in">
+          <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+          <div className="space-y-0.5">
+            <strong className="font-bold text-rose-300 block">Validação Pendente</strong>
+            <span>{validationError}</span>
+          </div>
+        </div>
+      )}
+
       {savedSuccessMsg && (
         <div className="p-3.5 rounded-xl bg-emerald-950/40 border border-emerald-500/30 text-emerald-300 text-xs flex items-center gap-2 animate-in fade-in">
           <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
@@ -347,10 +420,12 @@ export const MonthlyClosingTab: React.FC = () => {
                   <input
                     type="number"
                     step="0.01"
-                    required
                     disabled={isClosed}
                     value={realBankBalance}
-                    onChange={(e) => setRealBankBalance(e.target.value)}
+                    onChange={(e) => {
+                      setRealBankBalance(e.target.value);
+                      if (validationError) setValidationError(null);
+                    }}
                     placeholder="Ex: -2000.00 ou 450.00"
                     className="w-full px-3 py-2.5 rounded-xl bg-zinc-950 border border-zinc-700 text-white font-mono-numbers text-sm font-bold outline-none focus:border-emerald-500 disabled:opacity-60"
                   />
@@ -370,10 +445,14 @@ export const MonthlyClosingTab: React.FC = () => {
                 </label>
                 <select
                   value={selectedBankId}
-                  onChange={(e) => setSelectedBankId(e.target.value)}
+                  onChange={(e) => {
+                    setSelectedBankId(e.target.value);
+                    if (validationError) setValidationError(null);
+                  }}
                   disabled={isClosed}
                   className="w-full px-3 py-2 rounded-xl bg-zinc-950 border border-zinc-700 text-white outline-none focus:border-emerald-500 disabled:opacity-60 font-medium"
                 >
+                  <option value="">-- Selecione a Conta Bancária --</option>
                   {(data.bankAccounts || []).map((b) => (
                     <option key={b.id} value={b.id}>
                       {b.name} ({b.agency ? `Ag. ${b.agency}` : ''} - Cheque Esp: {formatBRL(b.overdraftLimit)})

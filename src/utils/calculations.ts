@@ -371,8 +371,21 @@ export function calculateForecast(
     // 5. Fiscal Recovery / Rolling Balance Calculation
     // Check if there is an explicit starting bank balance registered in monthlyClosings for THIS month
     let previousBalance = carriedBalance;
-    if (data.monthlyClosings && data.monthlyClosings[month] && typeof data.monthlyClosings[month].closingRealBalance === 'number') {
-      previousBalance = data.monthlyClosings[month].closingRealBalance;
+    if (data.monthlyClosings && data.monthlyClosings[month]) {
+      const closingObj = data.monthlyClosings[month];
+      if (closingObj.closingRealBalance !== undefined && closingObj.closingRealBalance !== null) {
+        const rawVal = closingObj.closingRealBalance;
+        let strVal = String(rawVal).trim();
+        if (strVal.includes(',') && strVal.includes('.')) {
+          strVal = strVal.replace(/\./g, '').replace(',', '.');
+        } else if (strVal.includes(',')) {
+          strVal = strVal.replace(',', '.');
+        }
+        const numVal = typeof rawVal === 'number' ? rawVal : parseFloat(strVal);
+        if (!isNaN(numVal)) {
+          previousBalance = numVal;
+        }
+      }
     }
 
     const overdraftCover = previousBalance < 0 ? Math.abs(previousBalance) : 0;
@@ -380,11 +393,7 @@ export function calculateForecast(
 
     const totalIncome = fixedIncome + variableIncome + positiveCarryover;
     // cardTotal é mantido de forma informativa no final da matriz sem ser somado ao montante de desembolso para evitar duplicidade de lançamentos
-    const totalExpenses =
-      pjExpenses +
-      pfFixedExpenses +
-      variableEnvelopes +
-      overdraftCover;
+    const totalExpenses = variableEnvelopes + overdraftCover;
 
     const finalBalance = totalIncome - totalExpenses;
 
