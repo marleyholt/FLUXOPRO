@@ -621,6 +621,24 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
                 return envelopeList.map((env) => {
                   const lowerName = env.name.trim().toLowerCase();
 
+                  // Active fixed/installment/periodic expenses assigned to this category for selectedMonth
+                  const activeCategoryExpenses = data.expenses.filter((exp) => {
+                    let isActive = false;
+                    if (exp.frequency === 'fixed') {
+                      isActive = getMonthDiff(exp.startMonth, selectedMonth) >= 0;
+                    } else if (exp.frequency === 'installment' && exp.installmentsCount) {
+                      isActive = getInstallmentInfo(exp.startMonth, exp.installmentsCount, selectedMonth).isActive;
+                    } else if (exp.frequency === 'periodic' && exp.periodicMonths) {
+                      isActive = getMonthDiff(exp.startMonth, selectedMonth) >= 0 && exp.periodicMonths.includes(monthIdx);
+                    } else if (exp.frequency === 'single') {
+                      isActive = exp.singleMonth === selectedMonth || exp.startMonth === selectedMonth;
+                    }
+                    const matchesCategory =
+                      exp.category.trim().toLowerCase() === lowerName || exp.category === env.id;
+                    return isActive && matchesCategory;
+                  });
+                  const activeExpensesSum = activeCategoryExpenses.reduce((acc, curr) => acc + curr.amount, 0);
+
                   // Variable logs for this envelope this month
                   const logs = data.variableExpenseLogs.filter(
                     (l) =>
@@ -647,13 +665,14 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
                   });
                   const cardTotalForEnv = cardTxForEnv.reduce((acc, curr) => acc + curr.installmentAmount, 0);
 
-                  const totalSpent = logsTotal + cardTotalForEnv;
+                  const totalSpent = activeExpensesSum + logsTotal + cardTotalForEnv;
 
-                  // Teto = soma dos subitens (se existirem), senão env.targetAmount
+                  // Teto = (soma dos subitens ou env.targetAmount) + soma das contas fixas da categoria
                   const subItemsSum = env.subItems && env.subItems.length > 0
                     ? env.subItems.reduce((acc: number, curr: any) => acc + curr.amount, 0)
                     : 0;
-                  const target = env.subItems && env.subItems.length > 0 ? subItemsSum : env.targetAmount;
+                  const baseTarget = env.subItems && env.subItems.length > 0 ? subItemsSum : env.targetAmount;
+                  const target = baseTarget + activeExpensesSum;
 
                   const percentage = target > 0 ? Math.round((totalSpent / target) * 100) : totalSpent > 0 ? 100 : 0;
                   const remaining = target - totalSpent;
@@ -866,19 +885,37 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
                         <div className="space-y-1.5 pt-1">
                           <div className="flex items-center justify-between">
                             <span className="text-[11px] font-semibold text-zinc-400 block">
-                              Lançamentos do Mês ({logs.length + cardTxForEnv.length}):
+                              Lançamentos & Contas do Mês ({activeCategoryExpenses.length + logs.length + cardTxForEnv.length}):
                             </span>
                             <span className="text-[10px] text-zinc-400 font-mono-numbers">
                               Soma Real: {formatBRL(totalSpent)}
                             </span>
                           </div>
 
-                          {logs.length === 0 && cardTxForEnv.length === 0 ? (
+                          {activeCategoryExpenses.length === 0 && logs.length === 0 && cardTxForEnv.length === 0 ? (
                             <p className="text-[11px] text-zinc-500 italic py-1">
                               Nenhum gasto registrado nesta categoria em {current.label}.
                             </p>
                           ) : (
-                            <div className="max-h-40 overflow-y-auto space-y-1 pr-1">
+                            <div className="max-h-48 overflow-y-auto space-y-1 pr-1">
+                              {/* Display Active Fixed/Installment Expenses in this Category */}
+                              {activeCategoryExpenses.map((exp) => (
+                                <div
+                                  key={`fixed-exp-${exp.id}`}
+                                  className="flex items-center justify-between text-xs py-1.5 px-2.5 rounded bg-amber-950/20 border border-amber-500/20 text-amber-200"
+                                >
+                                  <div className="truncate mr-2 flex items-center gap-1.5">
+                                    <span className="px-1.5 py-0.5 rounded bg-amber-500/30 text-[9px] font-bold text-amber-200">CONTA/OBRIGAÇÃO</span>
+                                    <span className="font-medium truncate">{exp.title}</span>
+                                  </div>
+                                  <div className="flex items-center gap-2 shrink-0 font-mono-numbers font-semibold text-amber-300">
+                                    <span>{formatBRL(exp.amount)}</span>
+                                    <span className={`text-[10px] px-1 rounded ${exp.paidMonths?.[selectedMonth] ? 'bg-emerald-500/20 text-emerald-300' : 'bg-rose-500/20 text-rose-300'}`}>
+                                      {exp.paidMonths?.[selectedMonth] ? 'Pago' : 'Pendente'}
+                                    </span>
+                                  </div>
+                                </div>
+                              ))}
                               {/* Display Card Transactions for this category */}
                               {cardTxForEnv.map((tx) => (
                                 <div

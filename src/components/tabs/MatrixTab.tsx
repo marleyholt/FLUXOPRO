@@ -382,217 +382,28 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
               {/* Submenus da Despesa Total */}
               {openSections.allExpenses && (
                 <>
-                  {/* 3.1 SUBMENU: SAÍDAS PJ */}
-                  {(scopeFilter === 'ALL' || scopeFilter === 'PJ') && (
-                    <>
-                      <tr
-                        onClick={() => toggleSection('pj')}
-                        className="bg-zinc-900/40 hover:bg-zinc-900 cursor-pointer font-semibold text-zinc-300 pl-4 border-l-2 border-indigo-500"
-                      >
-                        <td className="sticky left-0 z-10 bg-zinc-950 py-2.5 px-4 pl-8 flex items-center justify-between shadow-[2px_0_5px_rgba(0,0,0,0.5)]">
-                          <div className="flex items-center gap-2 text-indigo-400 font-semibold text-xs">
-                            {openSections.pj ? (
-                              <ChevronDown className="w-3.5 h-3.5" />
-                            ) : (
-                              <ChevronRight className="w-3.5 h-3.5" />
-                            )}
-                            <Building2 className="w-3.5 h-3.5" />
-                            <span>↳ Saídas PJ (Empresa)</span>
-                          </div>
-                          <span className="text-[10px] text-zinc-400 font-normal">
-                            {filteredPjExpenses.length} obrigações
-                          </span>
-                        </td>
-                        {summaries.map((s) => (
-                          <td
-                            key={s.month}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleCellClick(s.month, 'monthly');
-                            }}
-                            title={`Clique para ir para Previsão & Controle (${s.label})`}
-                            className="py-2.5 px-3 text-right font-mono-numbers font-semibold text-rose-300 bg-zinc-900/30 cursor-pointer hover:bg-indigo-950/40 transition"
-                          >
-                            {formatBRL(s.pjExpenses)}
-                          </td>
-                        ))}
-                      </tr>
-
-                  {openSections.pj &&
-                    filteredPjExpenses.map((exp) => (
-                      <tr key={exp.id} className="text-zinc-300 hover:bg-zinc-900/30">
-                        <td className="sticky left-0 z-10 bg-zinc-950 py-2 px-4 pl-9 text-zinc-300 shadow-[2px_0_5px_rgba(0,0,0,0.5)]">
-                          <span className="truncate block">{exp.title}</span>
-                        </td>
-                        {summaries.map((s) => (
-                          <td
-                            key={s.month}
-                            onClick={() => handleCellClick(s.month, 'monthly', `expense-${exp.id}`)}
-                            title={`Clique para destacar "${exp.title}" em Previsão & Controle (${s.label})`}
-                            onMouseEnter={() => {
-                              setHoveredRow(exp.id);
-                              setHoveredCol(s.month);
-                            }}
-                            onMouseLeave={() => {
-                              setHoveredRow(null);
-                              setHoveredCol(null);
-                            }}
-                            className={`py-2 px-3 text-right font-mono-numbers cursor-pointer transition ${getCellHoverClass(
-                              exp.id,
-                              s.month
-                            )} text-zinc-300`}
-                          >
-                            {formatBRL(exp.amount)}
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                </>
-              )}
-
-              {/* 4. SEÇÃO: SAÍDAS PF - FIXAS E FINANCIAMENTOS */}
-              {(scopeFilter === 'ALL' || scopeFilter === 'PF') && (
-                <>
-                  <tr
-                    onClick={() => toggleSection('pf')}
-                    className="bg-zinc-900/60 hover:bg-zinc-900 cursor-pointer font-semibold text-zinc-200"
-                  >
-                    <td className="sticky left-0 z-10 bg-zinc-900/90 py-2.5 px-4 flex items-center justify-between shadow-[2px_0_5px_rgba(0,0,0,0.5)]">
-                      <div className="flex items-center gap-2 text-rose-400 font-bold">
-                        {openSections.pf ? (
-                          <ChevronDown className="w-4 h-4" />
-                        ) : (
-                          <ChevronRight className="w-4 h-4" />
-                        )}
-                        <Home className="w-3.5 h-3.5" />
-                        <span>SAÍDAS PF (FIXAS, FINANC. & CHEQUE ESP.)</span>
-                      </div>
-                      <span className="text-[10px] text-zinc-400 font-normal">
-                        {filteredPfExpenses.length} despesas
+                  {/* Linha Automática de Cheque Especial / Saldo Negativo Anterior */}
+                  <tr className="bg-rose-950/20 text-rose-300 hover:bg-rose-950/30">
+                    <td className="sticky left-0 z-10 bg-zinc-950 py-2.5 px-4 pl-8 text-rose-400 font-semibold shadow-[2px_0_5px_rgba(0,0,0,0.5)]">
+                      <span className="truncate block font-bold">
+                        (⚠️) Cobertura Cheque Especial / Saldo Negativo Anterior
                       </span>
                     </td>
                     {summaries.map((s) => (
                       <td
                         key={s.month}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleCellClick(s.month, 'monthly');
-                        }}
-                        title={`Clique para ir para Previsão & Controle (${s.label})`}
-                        className="py-2.5 px-3 text-right font-mono-numbers font-bold text-rose-400 bg-zinc-900/40 cursor-pointer hover:bg-rose-950/40 transition"
+                        onClick={() => handleCellClick(s.month, 'monthly')}
+                        title={`Clique para ir para Abertura de Mês (${s.label})`}
+                        className={`py-2.5 px-3 text-right font-mono-numbers cursor-pointer transition ${
+                          s.overdraftCover > 0 ? 'text-rose-400 font-bold hover:bg-rose-900/40' : 'text-zinc-400 hover:bg-zinc-800/60'
+                        }`}
                       >
-                        {formatBRL(s.pfFixedExpenses + s.overdraftCover)}
+                        {s.overdraftCover > 0 ? formatBRL(s.overdraftCover) : '-'}
                       </td>
                     ))}
                   </tr>
 
-                  {openSections.pf && (
-                    <>
-                      {/* Linha Automática de Cheque Especial / Saldo Negativo Anterior */}
-                      <tr className="bg-rose-950/20 text-rose-300 hover:bg-rose-950/30">
-                        <td className="sticky left-0 z-10 bg-zinc-950 py-2 px-4 pl-9 text-rose-400 font-medium shadow-[2px_0_5px_rgba(0,0,0,0.5)]">
-                          <span className="truncate block font-semibold">
-                            (⚠️) Cobertura Cheque Especial / Saldo Negativo Anterior
-                          </span>
-                        </td>
-                        {summaries.map((s) => (
-                          <td
-                            key={s.month}
-                            onClick={() => handleCellClick(s.month, 'monthly')}
-                            title={`Clique para ir para Previsão & Controle (${s.label})`}
-                            className={`py-2 px-3 text-right font-mono-numbers cursor-pointer transition ${
-                              s.overdraftCover > 0 ? 'text-rose-400 font-bold hover:bg-rose-900/40' : 'text-zinc-400 hover:bg-zinc-800/60'
-                            }`}
-                          >
-                            {s.overdraftCover > 0 ? formatBRL(s.overdraftCover) : '-'}
-                          </td>
-                        ))}
-                      </tr>
-
-                      {/* Individual PF Expenses */}
-                      {filteredPfExpenses.map((exp) => (
-                        <tr key={exp.id} className="text-zinc-300 hover:bg-zinc-900/30">
-                          <td className="sticky left-0 z-10 bg-zinc-950 py-2 px-4 pl-9 text-zinc-300 shadow-[2px_0_5px_rgba(0,0,0,0.5)]">
-                            <div className="flex items-center justify-between">
-                              <span className="truncate">{exp.title}</span>
-                              {exp.frequency === 'periodic' && (
-                                <span className="text-[9px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400 ml-1">
-                                  Trimestral
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                          {summaries.map((s) => {
-                            const monthIdx = parseInt(s.month.split('-')[1], 10);
-                            let amount = 0;
-                            let instText = '';
-
-                            if (exp.frequency === 'fixed') {
-                              if (getMonthDiff(exp.startMonth, s.month) >= 0) {
-                                amount = exp.amount;
-                              }
-                            } else if (exp.frequency === 'installment' && exp.installmentsCount) {
-                              const inst = getInstallmentInfo(
-                                exp.startMonth,
-                                exp.installmentsCount,
-                                s.month
-                              );
-                              if (inst.isActive) {
-                                amount = exp.amount;
-                                instText = `${inst.current}/${inst.total}`;
-                              }
-                            } else if (exp.frequency === 'periodic' && exp.periodicMonths) {
-                              if (
-                                getMonthDiff(exp.startMonth, s.month) >= 0 &&
-                                exp.periodicMonths.includes(monthIdx)
-                              ) {
-                                amount = exp.amount;
-                              }
-                            }
-
-                            return (
-                              <td
-                                key={s.month}
-                                onClick={() => handleCellClick(s.month, 'monthly', `expense-${exp.id}`)}
-                                title={`Clique para destacar "${exp.title}" em Previsão & Controle (${s.label})`}
-                                onMouseEnter={() => {
-                                  setHoveredRow(exp.id);
-                                  setHoveredCol(s.month);
-                                }}
-                                onMouseLeave={() => {
-                                  setHoveredRow(null);
-                                  setHoveredCol(null);
-                                }}
-                                className={`py-2 px-3 text-right font-mono-numbers cursor-pointer transition ${getCellHoverClass(
-                                  exp.id,
-                                  s.month
-                                )} ${amount > 0 ? 'text-zinc-200' : 'text-zinc-400'}`}
-                              >
-                                {amount > 0 ? (
-                                  <div>
-                                    <span>{formatBRL(amount)}</span>
-                                    {instText && (
-                                      <span className="block text-[9px] text-zinc-400">
-                                        P. {instText}
-                                      </span>
-                                    )}
-                                  </div>
-                                ) : (
-                                  '-'
-                                )}
-                              </td>
-                            );
-                          })}
-                        </tr>
-                      ))}
-                    </>
-                  )}
-                </>
-              )}
-
-              {/* 5. SEÇÃO: ORÇAMENTO VARIÁVEL (TETOS ENVELOPES) */}
-              {(scopeFilter === 'ALL' || scopeFilter === 'PF') && (
-                <>
+                  {/* SEÇÃO: CATEGORIAS & ENVELOPES DE DESPESAS (CONSOLIDADO) */}
                   <tr
                     onClick={() => toggleSection('envelopes')}
                     className="bg-zinc-900/60 hover:bg-zinc-900 cursor-pointer font-semibold text-zinc-200"
@@ -605,7 +416,7 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
                           <ChevronRight className="w-4 h-4" />
                         )}
                         <PieChart className="w-3.5 h-3.5" />
-                        <span>ORÇAMENTO VARIÁVEL (TETOS DO DIA A DIA)</span>
+                        <span>CATEGORIAS & ENVELOPES DE DESPESAS (CONTAS & ENVELOPES)</span>
                       </div>
                       <span className="text-[10px] text-zinc-400 font-normal">
                         {data.budgetEnvelopes.length} categorias
@@ -676,6 +487,25 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
                         {summaries.map((s) => {
                           const lowerName = env.name.trim().toLowerCase();
 
+                          // Active fixed/installment expenses in this category for s.month
+                          const activeCategoryExpenses = data.expenses.filter((exp) => {
+                            let isActive = false;
+                            const mIdx = parseInt(s.month.split('-')[1], 10);
+                            if (exp.frequency === 'fixed') {
+                              isActive = getMonthDiff(exp.startMonth, s.month) >= 0;
+                            } else if (exp.frequency === 'installment' && exp.installmentsCount) {
+                              isActive = getInstallmentInfo(exp.startMonth, exp.installmentsCount, s.month).isActive;
+                            } else if (exp.frequency === 'periodic' && exp.periodicMonths) {
+                              isActive = getMonthDiff(exp.startMonth, s.month) >= 0 && exp.periodicMonths.includes(mIdx);
+                            } else if (exp.frequency === 'single') {
+                              isActive = exp.singleMonth === s.month || exp.startMonth === s.month;
+                            }
+                            const matchesCategory =
+                              exp.category.trim().toLowerCase() === lowerName || exp.category === env.id;
+                            return isActive && matchesCategory;
+                          });
+                          const expSum = activeCategoryExpenses.reduce((acc, curr) => acc + curr.amount, 0);
+
                           // Variable Expense Logs
                           const logs = data.variableExpenseLogs.filter(
                             (l) =>
@@ -698,12 +528,13 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
                           });
                           const cardTotal = cardTx.reduce((acc, curr) => acc + curr.installmentAmount, 0);
 
-                          const totalSpent = logged + cardTotal;
+                          const totalSpent = expSum + logged + cardTotal;
 
                           const subItemsSum = env.subItems && env.subItems.length > 0
                             ? env.subItems.reduce((acc: number, curr: any) => acc + curr.amount, 0)
                             : 0;
-                          const target = env.subItems && env.subItems.length > 0 ? subItemsSum : env.targetAmount;
+                          const baseTarget = env.subItems && env.subItems.length > 0 ? subItemsSum : env.targetAmount;
+                          const target = baseTarget + expSum;
 
                           const effective = Math.max(target, totalSpent);
                           const isOverflow = totalSpent > target;
@@ -881,8 +712,7 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
                     })}
                   </tr>
                 ))}
-                </>
-              )}
+
 
             </tbody>
           </table>

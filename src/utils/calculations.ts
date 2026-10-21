@@ -125,9 +125,12 @@ export function calculateForecast(
       }
     });
 
-    // 2. Expenses (PJ, PF Fixed, Financiamentos, Periódicos)
+    // 2. Expenses & Budget Categories (Contas, Obrigações e Envelopes por Categoria)
     let pjExpenses = 0;
     let pfFixedExpenses = 0;
+
+    // Process all active fixed/installment/periodic expenses for this month
+    const activeExpensesByCat: Record<string, number> = {};
 
     data.expenses.forEach((exp) => {
       if (scopeFilter !== 'ALL' && exp.scope !== scopeFilter) return;
@@ -156,6 +159,9 @@ export function calculateForecast(
         } else {
           pfFixedExpenses += exp.amount;
         }
+
+        const catKey = exp.category.trim().toLowerCase();
+        activeExpensesByCat[catKey] = (activeExpensesByCat[catKey] || 0) + exp.amount;
       }
     });
 
@@ -232,7 +238,6 @@ export function calculateForecast(
             const monthsAhead = getMonthDiff(latestRealMonth, month);
 
             if (monthsAhead > 0) {
-              // Redução automática de 10% ao mês (0.90^n) para projetar redução gradual de gastos avulsos
               projectedTrend = Math.round(baseDiff * Math.pow(0.90, monthsAhead));
             } else {
               projectedTrend = baseDiff;
@@ -251,106 +256,117 @@ export function calculateForecast(
       totalUnmappedDiff += unmappedDiff;
     });
 
-    // 4. Variable Envelopes (Mercado, iFood, Uber, etc.) - Only PF
+    // 4. Categorias & Envelopes de Despesas (Integrando Contas Fixas + Variáveis)
     let variableEnvelopes = 0;
-    if (scopeFilter !== 'PJ') {
-      const processedCategoryNames = new Set<string>();
+    const processedCategoryNames = new Set<string>();
 
-      // Process registered budget envelopes
-      data.budgetEnvelopes.forEach((env) => {
-        processedCategoryNames.add(env.name.trim().toLowerCase());
+    // Process registered budget envelopes
+    data.budgetEnvelopes.forEach((env) => {
+      const lowerName = env.name.trim().toLowerCase();
+      processedCategoryNames.add(lowerName);
 
-        // Find variable logs for this month
-        const logsForEnv = data.variableExpenseLogs.filter(
-          (log) =>
-            (log.categoryId === env.id || log.categoryId.trim().toLowerCase() === env.name.trim().toLowerCase()) &&
-            log.month === month
-        );
-        const totalLogged = logsForEnv.reduce((acc, curr) => acc + curr.amount, 0);
+      // Active expenses in this category
+      const expSum = activeExpensesByCat[lowerName] || activeExpensesByCat[env.id] || 0;
 
-        // Also count credit card transactions classified under this category/envelope for this month
-        const cardTxForEnv = data.cardTransactions.filter((tx) => {
-          if (tx.isPaused) return false;
-          const matchesCategory =
-            tx.category.trim().toLowerCase() === env.name.trim().toLowerCase() ||
-            tx.category === env.id;
-          if (!matchesCategory) return false;
+      // Find variable logs for this month
+      const logsForEnv = data.variableExpenseLogs.filter(
+        (log) =>
+          (log.categoryId === env.id || log.categoryId.trim().toLowerCase() === lowerName) &&
+          log.month === month
+      );
+      const totalLogged = logsForEnv.reduce((acc, curr) => acc + curr.amount, 0);
 
-          if (tx.type === 'recurring') {
-            return getMonthDiff(tx.startMonth, month) >= 0;
-          } else if (tx.type === 'installment') {
-            return getInstallmentInfo(tx.startMonth, tx.totalInstallments, month).isActive;
-          } else if (tx.type === 'single') {
-            return tx.startMonth === month;
-          }
-          return false;
-        });
-        const cardTotalForEnv = cardTxForEnv.reduce((acc, curr) => acc + curr.installmentAmount, 0);
+      // Count credit card transactions classified under this category/envelope
+      const cardTxForEnv = data.cardTransactions.filter((tx) => {
+        if (tx.isPaused) return false;
+        const matchesCategory =
+          tx.category.trim().toLowerCase() === lowerName ||
+          tx.category === env.id;
+        if (!matchesCategory) return false;
 
-        const totalSpent = totalLogged + cardTotalForEnv;
-        const subItemsSum = env.subItems && env.subItems.length > 0
-          ? env.subItems.reduce((acc, curr) => acc + curr.amount, 0)
-          : 0;
-        const target = env.subItems && env.subItems.length > 0 ? subItemsSum : env.targetAmount;
-
-        // Rule: Future/current projection considers the higher between target and actual
-        const effectiveAmount = Math.max(target, totalSpent);
-        variableEnvelopes += effectiveAmount;
+        if (tx.type === 'recurring') {
+          return getMonthDiff(tx.startMonth, month) >= 0;
+        } else if (tx.type === 'installment') {
+          return getInstallmentInfo(tx.startMonth, tx.totalInstallments, month).isActive;
+        } else if (tx.type === 'single') {
+          return tx.startMonth === month;
+        }
+        return false;
       });
+      const cardTotalForEnv = cardTxForEnv.reduce((acc, curr) => acc + curr.installmentAmount, 0);
 
-      // Discover and process extra custom categories from logs or credit card transactions
-      const extraCategories = new Set<string>();
+      const subItemsSum = env.subItems && env.subItems.length > 0
+        ? env.subItems.reduce((acc, curr) => acc + curr.amount, 0)
+        : 0;
+      const baseTarget = env.subItems && env.subItems.length > 0 ? subItemsSum : env.targetAmount;
 
-      data.variableExpenseLogs.forEach((l) => {
-        if (l.month === month && l.categoryId) {
-          const lower = l.categoryId.trim().toLowerCase();
-          if (!processedCategoryNames.has(lower)) {
-            extraCategories.add(l.categoryId.trim());
+      // Target inclui o teto da categoria + as contas/obrigações fixas da categoria
+      const totalTarget = baseTarget + expSum;
+      const totalSpent = expSum + totalLogged + cardTotalForEnv;
+
+      const effectiveAmount = Math.max(totalTarget, totalSpent);
+      variableEnvelopes += effectiveAmount;
+    });
+
+    // Discover extra categories from expenses, logs or card tx
+    const extraCategories = new Set<string>();
+
+    Object.keys(activeExpensesByCat).forEach((catLower) => {
+      if (!processedCategoryNames.has(catLower)) {
+        extraCategories.add(catLower);
+      }
+    });
+
+    data.variableExpenseLogs.forEach((l) => {
+      if (l.month === month && l.categoryId) {
+        const lower = l.categoryId.trim().toLowerCase();
+        if (!processedCategoryNames.has(lower)) {
+          extraCategories.add(lower);
+        }
+      }
+    });
+
+    data.cardTransactions.forEach((tx) => {
+      if (!tx.isPaused && tx.category) {
+        const lower = tx.category.trim().toLowerCase();
+        if (!processedCategoryNames.has(lower)) {
+          let activeInMonth = false;
+          if (tx.type === 'recurring') activeInMonth = getMonthDiff(tx.startMonth, month) >= 0;
+          else if (tx.type === 'installment') activeInMonth = getInstallmentInfo(tx.startMonth, tx.totalInstallments, month).isActive;
+          else if (tx.type === 'single') activeInMonth = tx.startMonth === month;
+
+          if (activeInMonth) {
+            extraCategories.add(lower);
           }
         }
+      }
+    });
+
+    extraCategories.forEach((lowerCat) => {
+      const expSum = activeExpensesByCat[lowerCat] || 0;
+
+      const logsForCat = data.variableExpenseLogs.filter(
+        (l) => l.month === month && l.categoryId.trim().toLowerCase() === lowerCat
+      );
+      const totalLogged = logsForCat.reduce((acc, curr) => acc + curr.amount, 0);
+
+      const cardTxForCat = data.cardTransactions.filter((tx) => {
+        if (tx.isPaused) return false;
+        if (tx.category.trim().toLowerCase() !== lowerCat) return false;
+
+        if (tx.type === 'recurring') return getMonthDiff(tx.startMonth, month) >= 0;
+        if (tx.type === 'installment') return getInstallmentInfo(tx.startMonth, tx.totalInstallments, month).isActive;
+        if (tx.type === 'single') return tx.startMonth === month;
+        return false;
       });
+      const cardTotalForCat = cardTxForCat.reduce((acc, curr) => acc + curr.installmentAmount, 0);
 
-      data.cardTransactions.forEach((tx) => {
-        if (!tx.isPaused && tx.category) {
-          const lower = tx.category.trim().toLowerCase();
-          if (!processedCategoryNames.has(lower)) {
-            let activeInMonth = false;
-            if (tx.type === 'recurring') activeInMonth = getMonthDiff(tx.startMonth, month) >= 0;
-            else if (tx.type === 'installment') activeInMonth = getInstallmentInfo(tx.startMonth, tx.totalInstallments, month).isActive;
-            else if (tx.type === 'single') activeInMonth = tx.startMonth === month;
+      const totalSpent = expSum + totalLogged + cardTotalForCat;
+      variableEnvelopes += totalSpent;
+    });
 
-            if (activeInMonth) {
-              extraCategories.add(tx.category.trim());
-            }
-          }
-        }
-      });
-
-      extraCategories.forEach((catName) => {
-        const lowerCat = catName.toLowerCase();
-        const logsForCat = data.variableExpenseLogs.filter(
-          (l) => l.month === month && l.categoryId.trim().toLowerCase() === lowerCat
-        );
-        const totalLogged = logsForCat.reduce((acc, curr) => acc + curr.amount, 0);
-
-        const cardTxForCat = data.cardTransactions.filter((tx) => {
-          if (tx.isPaused) return false;
-          if (tx.category.trim().toLowerCase() !== lowerCat) return false;
-
-          if (tx.type === 'recurring') return getMonthDiff(tx.startMonth, month) >= 0;
-          if (tx.type === 'installment') return getInstallmentInfo(tx.startMonth, tx.totalInstallments, month).isActive;
-          if (tx.type === 'single') return tx.startMonth === month;
-          return false;
-        });
-        const cardTotalForCat = cardTxForCat.reduce((acc, curr) => acc + curr.installmentAmount, 0);
-
-        const totalSpent = totalLogged + cardTotalForCat;
-        variableEnvelopes += totalSpent;
-      });
-
-      // Add unmapped card difference / projected trend to variableEnvelopes to ensure complete coverage without double counting
-      variableEnvelopes += totalUnmappedDiff;
-    }
+    // Add unmapped card difference / projected trend
+    variableEnvelopes += totalUnmappedDiff;
 
     // 5. Fiscal Recovery / Rolling Balance Calculation
     // Check if there is an explicit starting bank balance registered in monthlyClosings for THIS month
