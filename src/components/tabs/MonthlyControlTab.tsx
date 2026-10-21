@@ -1315,9 +1315,37 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
                                       </span>
                                       <span className="font-medium truncate">{tx.description}</span>
                                     </div>
-                                    <span className="font-mono-numbers font-bold text-indigo-300">
-                                      {formatBRL(tx.installmentAmount)}
-                                    </span>
+                                    <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+                                      <select
+                                        value={tx.linkedSubItemId ? `sub_${tx.linkedSubItemId}` : 'unplanned'}
+                                        onChange={(e) => {
+                                          const val = e.target.value;
+                                          let linkedSubItemId: string | undefined = undefined;
+                                          let isUnplanned = true;
+                                          if (val.startsWith('sub_')) {
+                                            linkedSubItemId = val.replace('sub_', '');
+                                            isUnplanned = false;
+                                          }
+                                          updateCardTransaction({
+                                            ...tx,
+                                            linkedSubItemId,
+                                            isUnplanned,
+                                          });
+                                        }}
+                                        className="px-2 py-1 rounded bg-zinc-900 border border-zinc-700 text-[11px] text-indigo-300 font-medium outline-none focus:border-indigo-500"
+                                        title="Associar a um item previsto desta categoria"
+                                      >
+                                        <option value="unplanned">🔗 Vincular Previsão...</option>
+                                        {env?.subItems && env.subItems.map((sub) => (
+                                          <option key={sub.id} value={`sub_${sub.id}`}>
+                                            {sub.name} ({formatBRL(sub.amount)})
+                                          </option>
+                                        ))}
+                                      </select>
+                                      <span className="font-mono-numbers font-bold text-indigo-300">
+                                        {formatBRL(tx.installmentAmount)}
+                                      </span>
+                                    </div>
                                   </div>
                                 ))}
                               </div>
