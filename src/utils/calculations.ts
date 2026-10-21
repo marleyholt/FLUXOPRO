@@ -162,10 +162,17 @@ export function calculateForecast(
     // 3. Variable Envelopes (Mercado, iFood, Uber, etc.) - Only PF
     let variableEnvelopes = 0;
     if (scopeFilter !== 'PJ') {
+      const processedCategoryNames = new Set<string>();
+
+      // Process registered budget envelopes
       data.budgetEnvelopes.forEach((env) => {
+        processedCategoryNames.add(env.name.trim().toLowerCase());
+
         // Find variable logs for this month
         const logsForEnv = data.variableExpenseLogs.filter(
-          (log) => log.categoryId === env.id && log.month === month
+          (log) =>
+            (log.categoryId === env.id || log.categoryId.trim().toLowerCase() === env.name.trim().toLowerCase()) &&
+            log.month === month
         );
         const totalLogged = logsForEnv.reduce((acc, curr) => acc + curr.amount, 0);
 
@@ -189,9 +196,64 @@ export function calculateForecast(
         const cardTotalForEnv = cardTxForEnv.reduce((acc, curr) => acc + curr.installmentAmount, 0);
 
         const totalSpent = totalLogged + cardTotalForEnv;
+        const subItemsSum = env.subItems && env.subItems.length > 0
+          ? env.subItems.reduce((acc, curr) => acc + curr.amount, 0)
+          : 0;
+        const target = env.subItems && env.subItems.length > 0 ? subItemsSum : env.targetAmount;
+
         // Rule: Future/current projection considers the higher between target and actual
-        const effectiveAmount = Math.max(env.targetAmount, totalSpent);
+        const effectiveAmount = Math.max(target, totalSpent);
         variableEnvelopes += effectiveAmount;
+      });
+
+      // Discover and process extra custom categories from logs or credit card transactions
+      const extraCategories = new Set<string>();
+
+      data.variableExpenseLogs.forEach((l) => {
+        if (l.month === month && l.categoryId) {
+          const lower = l.categoryId.trim().toLowerCase();
+          if (!processedCategoryNames.has(lower)) {
+            extraCategories.add(l.categoryId.trim());
+          }
+        }
+      });
+
+      data.cardTransactions.forEach((tx) => {
+        if (!tx.isPaused && tx.category) {
+          const lower = tx.category.trim().toLowerCase();
+          if (!processedCategoryNames.has(lower)) {
+            let activeInMonth = false;
+            if (tx.type === 'recurring') activeInMonth = getMonthDiff(tx.startMonth, month) >= 0;
+            else if (tx.type === 'installment') activeInMonth = getInstallmentInfo(tx.startMonth, tx.totalInstallments, month).isActive;
+            else if (tx.type === 'single') activeInMonth = tx.startMonth === month;
+
+            if (activeInMonth) {
+              extraCategories.add(tx.category.trim());
+            }
+          }
+        }
+      });
+
+      extraCategories.forEach((catName) => {
+        const lowerCat = catName.toLowerCase();
+        const logsForCat = data.variableExpenseLogs.filter(
+          (l) => l.month === month && l.categoryId.trim().toLowerCase() === lowerCat
+        );
+        const totalLogged = logsForCat.reduce((acc, curr) => acc + curr.amount, 0);
+
+        const cardTxForCat = data.cardTransactions.filter((tx) => {
+          if (tx.isPaused) return false;
+          if (tx.category.trim().toLowerCase() !== lowerCat) return false;
+
+          if (tx.type === 'recurring') return getMonthDiff(tx.startMonth, month) >= 0;
+          if (tx.type === 'installment') return getInstallmentInfo(tx.startMonth, tx.totalInstallments, month).isActive;
+          if (tx.type === 'single') return tx.startMonth === month;
+          return false;
+        });
+        const cardTotalForCat = cardTxForCat.reduce((acc, curr) => acc + curr.installmentAmount, 0);
+
+        const totalSpent = totalLogged + cardTotalForCat;
+        variableEnvelopes += totalSpent;
       });
     }
 

@@ -241,14 +241,18 @@ export const CardsTab: React.FC<CardsTabProps> = ({
     setEditingTx(null);
   };
 
-  // Lista de Categorias cadastradas estritamente nas Configurações (ou fallback se vazio)
+  // Lista de Categorias cadastradas nas Configurações + categorias existentes
   const availableCategories = Array.from(
-    new Set(
-      data.budgetEnvelopes && data.budgetEnvelopes.length > 0
+    new Set([
+      ...(data.budgetEnvelopes && data.budgetEnvelopes.length > 0
         ? data.budgetEnvelopes.map((e) => e.name)
-        : ['Outros']
-    )
+        : []),
+      ...data.cardTransactions.map((tx) => tx.category).filter(Boolean),
+    ])
   );
+  if (availableCategories.length === 0) {
+    availableCategories.push('Outros');
+  }
 
   return (
     <div className="space-y-6 pb-12">

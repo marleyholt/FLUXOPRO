@@ -581,42 +581,84 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
 
             {/* Envelopes List */}
             <div className="space-y-4">
-              {data.budgetEnvelopes.map((env) => {
-                // Variable logs for this envelope this month
-                const logs = data.variableExpenseLogs.filter(
-                  (l) => l.categoryId === env.id && l.month === selectedMonth
-                );
-                const logsTotal = logs.reduce((acc, curr) => acc + curr.amount, 0);
+              {(() => {
+                const envelopeList: Array<{ id: string; name: string; targetAmount: number; subItems?: any[]; isExtra?: boolean }> = [
+                  ...data.budgetEnvelopes.map((e) => ({ ...e, isExtra: false })),
+                ];
 
-                // Credit card transactions assigned to this envelope/category this month
-                const cardTxForEnv = data.cardTransactions.filter((tx) => {
-                  if (tx.isPaused) return false;
-                  const matchesCategory = tx.category === env.name || tx.category === env.id;
-                  if (!matchesCategory) return false;
+                const registeredNames = new Set(data.budgetEnvelopes.map((e) => e.name.trim().toLowerCase()));
 
-                  if (tx.type === 'recurring') {
-                    return getMonthDiff(tx.startMonth, selectedMonth) >= 0;
-                  } else if (tx.type === 'installment') {
-                    return getInstallmentInfo(tx.startMonth, tx.totalInstallments, selectedMonth).isActive;
-                  } else if (tx.type === 'single') {
-                    return tx.startMonth === selectedMonth;
+                // Discover extra categories present in logs or card transactions for selectedMonth
+                const extraCategoryNames = new Set<string>();
+                data.variableExpenseLogs.forEach((l) => {
+                  if (l.month === selectedMonth && l.categoryId && !registeredNames.has(l.categoryId.trim().toLowerCase())) {
+                    extraCategoryNames.add(l.categoryId.trim());
                   }
-                  return false;
                 });
-                const cardTotalForEnv = cardTxForEnv.reduce((acc, curr) => acc + curr.installmentAmount, 0);
 
-                const totalSpent = logsTotal + cardTotalForEnv;
+                data.cardTransactions.forEach((tx) => {
+                  if (!tx.isPaused && tx.category && !registeredNames.has(tx.category.trim().toLowerCase())) {
+                    let activeInMonth = false;
+                    if (tx.type === 'recurring') activeInMonth = getMonthDiff(tx.startMonth, selectedMonth) >= 0;
+                    else if (tx.type === 'installment') activeInMonth = getInstallmentInfo(tx.startMonth, tx.totalInstallments, selectedMonth).isActive;
+                    else if (tx.type === 'single') activeInMonth = tx.startMonth === selectedMonth;
 
-                // Teto = soma dos subitens (se existirem), senão env.targetAmount
-                const subItemsSum = env.subItems && env.subItems.length > 0
-                  ? env.subItems.reduce((acc, curr) => acc + curr.amount, 0)
-                  : 0;
-                const target = env.subItems && env.subItems.length > 0 ? subItemsSum : env.targetAmount;
+                    if (activeInMonth) {
+                      extraCategoryNames.add(tx.category.trim());
+                    }
+                  }
+                });
 
-                const percentage = target > 0 ? Math.round((totalSpent / target) * 100) : 100;
-                const remaining = target - totalSpent;
-                const isOverBudget = remaining < 0;
-                const isMinimized = !!minimizedEnvelopes[env.id];
+                extraCategoryNames.forEach((catName) => {
+                  envelopeList.push({
+                    id: `extra-${catName}`,
+                    name: catName,
+                    targetAmount: 0,
+                    isExtra: true,
+                  });
+                });
+
+                return envelopeList.map((env) => {
+                  const lowerName = env.name.trim().toLowerCase();
+
+                  // Variable logs for this envelope this month
+                  const logs = data.variableExpenseLogs.filter(
+                    (l) =>
+                      l.month === selectedMonth &&
+                      (l.categoryId === env.id || l.categoryId.trim().toLowerCase() === lowerName)
+                  );
+                  const logsTotal = logs.reduce((acc, curr) => acc + curr.amount, 0);
+
+                  // Credit card transactions assigned to this envelope/category this month
+                  const cardTxForEnv = data.cardTransactions.filter((tx) => {
+                    if (tx.isPaused) return false;
+                    const matchesCategory =
+                      tx.category.trim().toLowerCase() === lowerName || tx.category === env.id;
+                    if (!matchesCategory) return false;
+
+                    if (tx.type === 'recurring') {
+                      return getMonthDiff(tx.startMonth, selectedMonth) >= 0;
+                    } else if (tx.type === 'installment') {
+                      return getInstallmentInfo(tx.startMonth, tx.totalInstallments, selectedMonth).isActive;
+                    } else if (tx.type === 'single') {
+                      return tx.startMonth === selectedMonth;
+                    }
+                    return false;
+                  });
+                  const cardTotalForEnv = cardTxForEnv.reduce((acc, curr) => acc + curr.installmentAmount, 0);
+
+                  const totalSpent = logsTotal + cardTotalForEnv;
+
+                  // Teto = soma dos subitens (se existirem), senão env.targetAmount
+                  const subItemsSum = env.subItems && env.subItems.length > 0
+                    ? env.subItems.reduce((acc: number, curr: any) => acc + curr.amount, 0)
+                    : 0;
+                  const target = env.subItems && env.subItems.length > 0 ? subItemsSum : env.targetAmount;
+
+                  const percentage = target > 0 ? Math.round((totalSpent / target) * 100) : totalSpent > 0 ? 100 : 0;
+                  const remaining = target - totalSpent;
+                  const isOverBudget = remaining < 0;
+                  const isMinimized = !!minimizedEnvelopes[env.id];
 
                 // Color status
                 const statusColor =
@@ -905,8 +947,9 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
                     )}
                   </div>
                 );
-              })}
-            </div>
+              });
+            })()}
+          </div>
 
           </div>
         </div>

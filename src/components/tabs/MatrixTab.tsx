@@ -618,24 +618,87 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
                     ))}
                   </tr>
 
-                  {openSections.envelopes &&
-                    data.budgetEnvelopes.map((env) => (
+                  {openSections.envelopes && (() => {
+                    // Collect registered envelopes and any extra custom categories present in logs or card transactions
+                    const envelopeList: Array<{ id: string; name: string; targetAmount: number; subItems?: any[]; isExtra?: boolean }> = [
+                      ...data.budgetEnvelopes.map((e) => ({ ...e, isExtra: false })),
+                    ];
+
+                    const registeredNames = new Set(data.budgetEnvelopes.map((e) => e.name.trim().toLowerCase()));
+
+                    // Discover extra categories
+                    const extraCategoryNames = new Set<string>();
+                    data.variableExpenseLogs.forEach((l) => {
+                      if (l.categoryId && !registeredNames.has(l.categoryId.trim().toLowerCase())) {
+                        extraCategoryNames.add(l.categoryId.trim());
+                      }
+                    });
+                    data.cardTransactions.forEach((tx) => {
+                      if (!tx.isPaused && tx.category && !registeredNames.has(tx.category.trim().toLowerCase())) {
+                        extraCategoryNames.add(tx.category.trim());
+                      }
+                    });
+
+                    extraCategoryNames.forEach((catName) => {
+                      envelopeList.push({
+                        id: `extra-${catName}`,
+                        name: catName,
+                        targetAmount: 0,
+                        isExtra: true,
+                      });
+                    });
+
+                    return envelopeList.map((env) => (
                       <tr key={env.id} className="text-zinc-300 hover:bg-zinc-900/30">
                         <td className="sticky left-0 z-10 bg-zinc-950 py-2 px-4 pl-9 text-zinc-300 shadow-[2px_0_5px_rgba(0,0,0,0.5)]">
                           <div className="flex items-center justify-between">
-                            <span className="truncate">{env.name}</span>
+                            <span className="truncate flex items-center gap-1.5">
+                              <span>{env.name}</span>
+                              {env.isExtra && (
+                                <span className="px-1.5 py-0.2 rounded text-[9px] bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-semibold">
+                                  Cartão/Extra
+                                </span>
+                              )}
+                            </span>
                             <span className="text-[10px] text-zinc-400 font-mono-numbers">
                               (Teto: {formatBRL(env.targetAmount)})
                             </span>
                           </div>
                         </td>
                         {summaries.map((s) => {
+                          const lowerName = env.name.trim().toLowerCase();
+
+                          // Variable Expense Logs
                           const logs = data.variableExpenseLogs.filter(
-                            (l) => l.categoryId === env.id && l.month === s.month
+                            (l) =>
+                              l.month === s.month &&
+                              (l.categoryId === env.id || l.categoryId.trim().toLowerCase() === lowerName)
                           );
                           const logged = logs.reduce((acc, curr) => acc + curr.amount, 0);
-                          const effective = Math.max(env.targetAmount, logged);
-                          const isOverflow = logged > env.targetAmount;
+
+                          // Credit Card Transactions classified under this category/envelope
+                          const cardTx = data.cardTransactions.filter((tx) => {
+                            if (tx.isPaused) return false;
+                            const matches =
+                              tx.category.trim().toLowerCase() === lowerName || tx.category === env.id;
+                            if (!matches) return false;
+
+                            if (tx.type === 'recurring') return getMonthDiff(tx.startMonth, s.month) >= 0;
+                            if (tx.type === 'installment') return getInstallmentInfo(tx.startMonth, tx.totalInstallments, s.month).isActive;
+                            if (tx.type === 'single') return tx.startMonth === s.month;
+                            return false;
+                          });
+                          const cardTotal = cardTx.reduce((acc, curr) => acc + curr.installmentAmount, 0);
+
+                          const totalSpent = logged + cardTotal;
+
+                          const subItemsSum = env.subItems && env.subItems.length > 0
+                            ? env.subItems.reduce((acc: number, curr: any) => acc + curr.amount, 0)
+                            : 0;
+                          const target = env.subItems && env.subItems.length > 0 ? subItemsSum : env.targetAmount;
+
+                          const effective = Math.max(target, totalSpent);
+                          const isOverflow = totalSpent > target;
 
                           return (
                             <td
@@ -656,16 +719,18 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
                               )} ${isOverflow ? 'text-rose-400 font-bold' : 'text-zinc-300'}`}
                             >
                               {formatBRL(effective)}
-                              {logged > 0 && logged !== env.targetAmount && (
+                              {totalSpent > 0 && (
                                 <span className="block text-[9px] text-zinc-400">
-                                  Real: {formatBRL(logged)}
+                                  Real: {formatBRL(totalSpent)}
+                                  {cardTotal > 0 && <span className="text-indigo-400 ml-1">💳</span>}
                                 </span>
                               )}
                             </td>
                           );
                         })}
                       </tr>
-                    ))}
+                    ));
+                  })()}
                 </>
               )}
 
