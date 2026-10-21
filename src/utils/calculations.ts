@@ -163,13 +163,34 @@ export function calculateForecast(
     let variableEnvelopes = 0;
     if (scopeFilter !== 'PJ') {
       data.budgetEnvelopes.forEach((env) => {
-        // Find logs for this month
+        // Find variable logs for this month
         const logsForEnv = data.variableExpenseLogs.filter(
           (log) => log.categoryId === env.id && log.month === month
         );
         const totalLogged = logsForEnv.reduce((acc, curr) => acc + curr.amount, 0);
+
+        // Also count credit card transactions classified under this category/envelope for this month
+        const cardTxForEnv = data.cardTransactions.filter((tx) => {
+          if (tx.isPaused) return false;
+          const matchesCategory =
+            tx.category.trim().toLowerCase() === env.name.trim().toLowerCase() ||
+            tx.category === env.id;
+          if (!matchesCategory) return false;
+
+          if (tx.type === 'recurring') {
+            return getMonthDiff(tx.startMonth, month) >= 0;
+          } else if (tx.type === 'installment') {
+            return getInstallmentInfo(tx.startMonth, tx.totalInstallments, month).isActive;
+          } else if (tx.type === 'single') {
+            return tx.startMonth === month;
+          }
+          return false;
+        });
+        const cardTotalForEnv = cardTxForEnv.reduce((acc, curr) => acc + curr.installmentAmount, 0);
+
+        const totalSpent = totalLogged + cardTotalForEnv;
         // Rule: Future/current projection considers the higher between target and actual
-        const effectiveAmount = Math.max(env.targetAmount, totalLogged);
+        const effectiveAmount = Math.max(env.targetAmount, totalSpent);
         variableEnvelopes += effectiveAmount;
       });
     }
@@ -270,11 +291,11 @@ export function calculateForecast(
     const positiveCarryover = previousBalance > 0 ? previousBalance : 0;
 
     const totalIncome = fixedIncome + variableIncome + positiveCarryover;
+    // cardTotal é mantido de forma informativa no final da matriz sem ser somado ao montante de desembolso para evitar duplicidade de lançamentos
     const totalExpenses =
       pjExpenses +
       pfFixedExpenses +
       variableEnvelopes +
-      cardTotal +
       overdraftCover;
 
     const finalBalance = totalIncome - totalExpenses;
