@@ -19,6 +19,7 @@ interface NewTransactionModalProps {
   onClose: () => void;
   defaultCardId?: string;
   defaultTab?: 'expense' | 'income' | 'cardTx';
+  defaultCategory?: string;
 }
 
 export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
@@ -26,6 +27,7 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
   onClose,
   defaultCardId,
   defaultTab,
+  defaultCategory,
 }) => {
   const {
     data,
@@ -47,15 +49,6 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
   const [notes, setNotes] = useState('');
   const [needsReview, setNeedsReview] = useState(false);
 
-  // Expense specific
-  const [expenseCategory, setExpenseCategory] = useState('Moradia/Contas');
-  const [isNewCategory, setIsNewCategory] = useState(false);
-  const [customCategoryName, setCustomCategoryName] = useState('');
-  const [customCategoryTarget, setCustomCategoryTarget] = useState('');
-  const [frequency, setFrequency] = useState<ExpenseFrequency>('fixed');
-  const [installmentsCount, setInstallmentsCount] = useState('12');
-  const [periodicInterval, setPeriodicInterval] = useState<'quarterly' | 'annual'>('quarterly');
-
   // Dynamic Categories list - strictly uses configured budgetEnvelopes from Configurações
   const availableCategories = useMemo(() => {
     const configuredEnvelopes = (data.budgetEnvelopes || []).map((e) => e.name);
@@ -69,6 +62,15 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
       'Outros',
     ];
   }, [data.budgetEnvelopes]);
+
+  // Expense specific
+  const [expenseCategory, setExpenseCategory] = useState('');
+  const [isNewCategory, setIsNewCategory] = useState(false);
+  const [customCategoryName, setCustomCategoryName] = useState('');
+  const [customCategoryTarget, setCustomCategoryTarget] = useState('');
+  const [frequency, setFrequency] = useState<ExpenseFrequency>('fixed');
+  const [installmentsCount, setInstallmentsCount] = useState('12');
+  const [periodicInterval, setPeriodicInterval] = useState<'quarterly' | 'annual'>('quarterly');
 
   // Income specific
   const [incomeType, setIncomeType] = useState<'fixed' | 'variable'>('fixed');
@@ -93,9 +95,18 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
       setAmount('');
       setNotes('');
       setNeedsReview(false);
-      setCardCategory(availableCategories[0] || 'Outros');
+
+      const initialCat = (defaultCategory && availableCategories.includes(defaultCategory))
+        ? defaultCategory
+        : (availableCategories[0] || 'Outros');
+
+      setExpenseCategory(initialCat);
+      setCardCategory(initialCat);
+      setIsNewCategory(false);
+      setCustomCategoryName('');
+      setCustomCategoryTarget('');
     }
-  }, [isOpen, defaultTab, defaultCardId, selectedMonth, data.creditCards, availableCategories]);
+  }, [isOpen, defaultTab, defaultCardId, defaultCategory, selectedMonth, data.creditCards, availableCategories]);
 
   if (!isOpen) return null;
 

@@ -16,14 +16,19 @@ export const QuickExpenseModal: React.FC<QuickExpenseModalProps> = ({
   const { data, selectedMonth, addVariableExpenseLog, isMonthClosed } = useFinance();
   const isClosed = isMonthClosed(selectedMonth);
 
-  const [categoryId, setCategoryId] = useState<string>(
-    defaultEnvelopeId || data.budgetEnvelopes[0]?.id || ''
-  );
+  const [categoryId, setCategoryId] = useState<string>('');
   const [amount, setAmount] = useState<string>('');
   const [description, setDescription] = useState<string>('');
-  const [date, setDate] = useState<string>(
-    `${selectedMonth}-15` // default to middle of selected month
-  );
+  const [date, setDate] = useState<string>('');
+
+  React.useEffect(() => {
+    if (isOpen) {
+      setCategoryId(defaultEnvelopeId || data.budgetEnvelopes[0]?.id || '');
+      setAmount('');
+      setDescription('');
+      setDate(`${selectedMonth}-15`);
+    }
+  }, [isOpen, defaultEnvelopeId, data.budgetEnvelopes, selectedMonth]);
 
   if (!isOpen) return null;
 

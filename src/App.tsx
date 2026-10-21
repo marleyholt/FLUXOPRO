@@ -64,6 +64,7 @@ function MainApp({ currentUser }: MainAppProps) {
   const [isNewTxModalOpen, setIsNewTxModalOpen] = useState(false);
   const [newTxDefaultTab, setNewTxDefaultTab] = useState<'expense' | 'income' | 'cardTx' | undefined>();
   const [newTxDefaultCardId, setNewTxDefaultCardId] = useState<string | undefined>();
+  const [newTxDefaultCategory, setNewTxDefaultCategory] = useState<string | undefined>();
   const [isQuickExpenseOpen, setIsQuickExpenseOpen] = useState(false);
   const [quickExpenseEnvelopeId, setQuickExpenseEnvelopeId] = useState<string | undefined>();
   const [isRealInvoiceModalOpen, setIsRealInvoiceModalOpen] = useState(false);
@@ -71,9 +72,10 @@ function MainApp({ currentUser }: MainAppProps) {
   const [isBackupModalOpen, setIsBackupModalOpen] = useState(false);
   const [isChecklistModalOpen, setIsChecklistModalOpen] = useState(false);
 
-  const handleOpenNewTransaction = (cardId?: string, tab?: 'expense' | 'income' | 'cardTx') => {
+  const handleOpenNewTransaction = (cardId?: string, tab?: 'expense' | 'income' | 'cardTx', category?: string) => {
     setNewTxDefaultCardId(cardId);
     setNewTxDefaultTab(tab || (cardId ? 'cardTx' : undefined));
+    setNewTxDefaultCategory(category);
     setIsNewTxModalOpen(true);
   };
 
@@ -277,6 +279,7 @@ function MainApp({ currentUser }: MainAppProps) {
         onClose={() => setIsNewTxModalOpen(false)}
         defaultCardId={newTxDefaultCardId}
         defaultTab={newTxDefaultTab}
+        defaultCategory={newTxDefaultCategory}
       />
 
       <QuickExpenseModal
