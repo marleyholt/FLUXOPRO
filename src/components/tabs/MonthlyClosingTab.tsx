@@ -71,15 +71,26 @@ export const MonthlyClosingTab: React.FC = () => {
   // Existing closing record for this month
   const existingClosing = data.monthlyClosings?.[selectedMonth];
 
-  // Local state for closing bank balance input
+  // Local state for closing bank balance input (defines the STARTING balance for selectedMonth)
   const [realBankBalance, setRealBankBalance] = useState<string>(
     existingClosing !== undefined
       ? String(existingClosing.closingRealBalance)
-      : String(current.finalBalance.toFixed(2))
+      : String(current.previousBalance.toFixed(2))
   );
 
   const [closingNotes, setClosingNotes] = useState<string>(existingClosing?.notes || '');
   const [savedSuccessMsg, setSavedSuccessMsg] = useState<string | null>(null);
+
+  // Sync input when selectedMonth or existingClosing changes
+  React.useEffect(() => {
+    if (existingClosing !== undefined) {
+      setRealBankBalance(String(existingClosing.closingRealBalance));
+      setClosingNotes(existingClosing.notes || '');
+    } else {
+      setRealBankBalance(String(current.previousBalance.toFixed(2)));
+      setClosingNotes('');
+    }
+  }, [selectedMonth, existingClosing, current.previousBalance]);
 
   // Reopen Modal State (Replaces blocked window.confirm)
   const [isReopenModalOpen, setIsReopenModalOpen] = useState<boolean>(false);
@@ -521,49 +532,51 @@ export const MonthlyClosingTab: React.FC = () => {
             )}
           </div>
 
-          {/* CARD 2: SALDO BANCÁRIO REAL CONSOLIDADO */}
+          {/* CARD 2: SALDO BANCÁRIO INICIAL DO MÊS */}
           <div className="p-5 rounded-2xl bg-zinc-900/90 border border-zinc-800 shadow-sm space-y-4">
             <div className="flex items-center gap-2 border-b border-zinc-800/80 pb-3">
               <DollarSign className="w-4 h-4 text-emerald-400" />
               <h3 className="text-sm font-bold text-white">
-                Saldo Bancário Consolidado (Real vs. Projetado)
+                Saldo Inicial do Mês ({current.label})
               </h3>
             </div>
 
             <div className="grid grid-cols-2 gap-3 text-xs">
               <div className="p-3 rounded-xl bg-zinc-950/80 border border-zinc-800 space-y-1">
-                <span className="text-[10px] text-zinc-400 uppercase font-semibold">Projetado no Sistema</span>
+                <span className="text-[10px] text-zinc-400 uppercase font-semibold">Projetado Anteriormente</span>
                 <span
                   className={`block font-mono-numbers font-bold text-sm ${
-                    projectedBalance >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                    current.previousBalance >= 0 ? 'text-emerald-400' : 'text-rose-400'
                   }`}
                 >
-                  {formatBRL(projectedBalance)}
+                  {formatBRL(current.previousBalance)}
                 </span>
-                <span className="text-[10px] text-zinc-400">Baseado nas contas lançadas</span>
+                <span className="text-[10px] text-zinc-400">Projeção automática</span>
               </div>
 
               <div className="p-3 rounded-xl bg-zinc-950/80 border border-zinc-800 space-y-1">
-                <span className="text-[10px] text-zinc-400 uppercase font-semibold">Diferença / Ajuste</span>
+                <span className="text-[10px] text-zinc-400 uppercase font-semibold">Ajuste do Saldo Inicial</span>
                 <span
                   className={`block font-mono-numbers font-bold text-sm ${
-                    difference >= 0 ? 'text-emerald-400' : 'text-amber-400'
+                    parsedBankBalance - current.previousBalance >= 0 ? 'text-emerald-400' : 'text-amber-400'
                   }`}
                 >
-                  {difference > 0 ? `+${formatBRL(difference)}` : formatBRL(difference)}
+                  {parsedBankBalance - current.previousBalance > 0
+                    ? `+${formatBRL(parsedBankBalance - current.previousBalance)}`
+                    : formatBRL(parsedBankBalance - current.previousBalance)}
                 </span>
-                <span className="text-[10px] text-zinc-400">Desvio real vs projetado</span>
+                <span className="text-[10px] text-zinc-400">Ajuste real informado</span>
               </div>
             </div>
 
-            {/* Input Form de Saldo (Preenchido automaticamente pelo extrato ou manual) */}
+            {/* Input Form de Saldo Inicial */}
             <form onSubmit={handleSaveBankClosing} className="space-y-3 pt-1">
               <div className="space-y-1">
                 <label className="text-xs font-semibold text-zinc-200 flex items-center justify-between">
-                  <span>Saldo Consolidado das Contas Bancárias (R$):</span>
+                  <span>Saldo com que {current.label} Inicia (R$):</span>
                   {uploadedStatements.length > 0 && (
                     <span className="text-emerald-400 text-[10px] font-bold">
-                      Calculado dos Extratos ({uploadedStatements.length} contas)
+                      Extraído dos Extratos ({uploadedStatements.length} contas)
                     </span>
                   )}
                 </label>
@@ -575,13 +588,16 @@ export const MonthlyClosingTab: React.FC = () => {
                     disabled={isClosed}
                     value={realBankBalance}
                     onChange={(e) => setRealBankBalance(e.target.value)}
-                    placeholder="Ex: -1500.00 ou 450.00"
+                    placeholder="Ex: -2000.00 ou 450.00"
                     className="w-full px-3 py-2.5 rounded-xl bg-zinc-950 border border-zinc-700 text-white font-mono-numbers text-sm font-bold outline-none focus:border-emerald-500 disabled:opacity-60"
                   />
                   <span className="absolute right-3 top-2.5 text-xs text-zinc-400 font-semibold">
                     {isOverdraft ? 'Negativo (Cheque Especial)' : 'Positivo'}
                   </span>
                 </div>
+                <p className="text-[11px] text-zinc-400 pt-0.5">
+                  💡 Este valor define o saldo com que <strong>{current.label}</strong> inicia. Se for negativo (ex: -2000,00), entrará diretamente na linha de <strong>Cobertura Cheque Especial / Saldo Negativo Anterior</strong> do mês de {current.label}.
+                </p>
               </div>
 
               {/* Anotações */}

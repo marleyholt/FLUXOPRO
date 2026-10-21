@@ -648,7 +648,7 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
                       });
                     });
 
-                    return envelopeList.map((env) => (
+                    const renderedEnvelopes = envelopeList.map((env) => (
                       <tr key={env.id} className="text-zinc-300 hover:bg-zinc-900/30">
                         <td className="sticky left-0 z-10 bg-zinc-950 py-2 px-4 pl-9 text-zinc-300 shadow-[2px_0_5px_rgba(0,0,0,0.5)]">
                           <div className="flex items-center justify-between">
@@ -730,6 +730,43 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
                         })}
                       </tr>
                     ));
+
+                    const hasUnmappedInAnyMonth = summaries.some(
+                      (s) => Object.values(s.cardUnmappedDiffByCard).reduce((a, b) => a + b, 0) > 0
+                    );
+
+                    return (
+                      <>
+                        {renderedEnvelopes}
+                        {hasUnmappedInAnyMonth && (
+                          <tr className="text-zinc-300 hover:bg-zinc-900/30 border-t border-zinc-900">
+                            <td className="sticky left-0 z-10 bg-zinc-950 py-2 px-4 pl-9 text-indigo-300 font-medium shadow-[2px_0_5px_rgba(0,0,0,0.5)]">
+                              <div className="flex items-center justify-between">
+                                <span className="truncate flex items-center gap-1.5 text-xs font-semibold text-indigo-300">
+                                  <span>💳 Compras de Cartão a Classificar</span>
+                                </span>
+                                <span className="text-[10px] text-zinc-500 font-mono-numbers">
+                                  (Diferença/Projeção)
+                                </span>
+                              </div>
+                            </td>
+                            {summaries.map((s) => {
+                              const unmapped = Object.values(s.cardUnmappedDiffByCard).reduce((a, b) => a + b, 0);
+                              return (
+                                <td
+                                  key={s.month}
+                                  onClick={() => handleCellClick(s.month, 'cards')}
+                                  title={`Clique para ir até Central de Cartões em ${s.label} e classificar itens`}
+                                  className="py-2 px-3 text-right font-mono-numbers text-indigo-300 font-semibold cursor-pointer hover:bg-indigo-950/30 transition"
+                                >
+                                  {unmapped > 0 ? formatBRL(unmapped) : '-'}
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        )}
+                      </>
+                    );
                   })()}
                 </>
               )}

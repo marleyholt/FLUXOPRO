@@ -159,7 +159,99 @@ export function calculateForecast(
       }
     });
 
-    // 3. Variable Envelopes (Mercado, iFood, Uber, etc.) - Only PF
+    // 3. Credit Cards calculation
+    let cardTotal = 0;
+    let totalUnmappedDiff = 0;
+    const cardTotalsByCard: Record<string, number> = {};
+    const cardUnmappedDiffByCard: Record<string, number> = {};
+    const cardItemsCountByCard: Record<string, number> = {};
+
+    data.creditCards.forEach((card) => {
+      if (scopeFilter !== 'ALL' && card.scope !== scopeFilter) return;
+
+      let cardDetailedSum = 0;
+      let itemsCount = 0;
+
+      data.cardTransactions.forEach((tx) => {
+        if (tx.cardId !== card.id) return;
+        if (tx.isPaused) return;
+
+        let active = false;
+        if (tx.type === 'recurring') {
+          if (getMonthDiff(tx.startMonth, month) >= 0) {
+            active = true;
+          }
+        } else if (tx.type === 'installment') {
+          const inst = getInstallmentInfo(tx.startMonth, tx.totalInstallments, month);
+          active = inst.isActive;
+        } else if (tx.type === 'single') {
+          if (tx.startMonth === month) {
+            active = true;
+          }
+        }
+
+        if (active) {
+          cardDetailedSum += tx.installmentAmount;
+          itemsCount += 1;
+        }
+      });
+
+      // Check real bank invoice if entered
+      const realInvoice = card.realInvoiceTotalByMonth?.[month];
+      let unmappedDiff = 0;
+      let effectiveCardTotal = cardDetailedSum;
+
+      if (realInvoice !== undefined) {
+        if (realInvoice > cardDetailedSum) {
+          unmappedDiff = realInvoice - cardDetailedSum;
+        }
+        effectiveCardTotal = Math.max(realInvoice, cardDetailedSum);
+      } else {
+        // Projeta tendência para meses futuros
+        let projectedTrend = 0;
+
+        if (card.manualProjectedTrend !== undefined && card.manualProjectedTrend !== null) {
+          projectedTrend = card.manualProjectedTrend;
+        } else {
+          // Busca a fatura real fechada mais recente
+          const realInvoiceMonths = Object.keys(card.realInvoiceTotalByMonth || {}).sort();
+          if (realInvoiceMonths.length > 0) {
+            const latestRealMonth = realInvoiceMonths[realInvoiceMonths.length - 1];
+            const latestRealTotal = card.realInvoiceTotalByMonth![latestRealMonth];
+
+            // Calcula compras mapeadas no último mês real
+            let sumForLatest = 0;
+            data.cardTransactions.forEach((tx) => {
+              if (tx.cardId !== card.id || tx.isPaused) return;
+              if (tx.type === 'recurring' && getMonthDiff(tx.startMonth, latestRealMonth) >= 0) sumForLatest += tx.installmentAmount;
+              else if (tx.type === 'installment' && getInstallmentInfo(tx.startMonth, tx.totalInstallments, latestRealMonth).isActive) sumForLatest += tx.installmentAmount;
+              else if (tx.type === 'single' && tx.startMonth === latestRealMonth) sumForLatest += tx.installmentAmount;
+            });
+
+            const baseDiff = Math.max(0, latestRealTotal - sumForLatest);
+            const monthsAhead = getMonthDiff(latestRealMonth, month);
+
+            if (monthsAhead > 0) {
+              // Redução automática de 10% ao mês (0.90^n) para projetar redução gradual de gastos avulsos
+              projectedTrend = Math.round(baseDiff * Math.pow(0.90, monthsAhead));
+            } else {
+              projectedTrend = baseDiff;
+            }
+          }
+        }
+
+        effectiveCardTotal = cardDetailedSum + projectedTrend;
+        unmappedDiff = projectedTrend;
+      }
+
+      cardTotalsByCard[card.id] = effectiveCardTotal;
+      cardUnmappedDiffByCard[card.id] = unmappedDiff;
+      cardItemsCountByCard[card.id] = itemsCount;
+      cardTotal += effectiveCardTotal;
+      totalUnmappedDiff += unmappedDiff;
+    });
+
+    // 4. Variable Envelopes (Mercado, iFood, Uber, etc.) - Only PF
     let variableEnvelopes = 0;
     if (scopeFilter !== 'PJ') {
       const processedCategoryNames = new Set<string>();
@@ -255,100 +347,18 @@ export function calculateForecast(
         const totalSpent = totalLogged + cardTotalForCat;
         variableEnvelopes += totalSpent;
       });
+
+      // Add unmapped card difference / projected trend to variableEnvelopes to ensure complete coverage without double counting
+      variableEnvelopes += totalUnmappedDiff;
     }
 
-    // 4. Credit Cards
-    let cardTotal = 0;
-    const cardTotalsByCard: Record<string, number> = {};
-    const cardUnmappedDiffByCard: Record<string, number> = {};
-    const cardItemsCountByCard: Record<string, number> = {};
-
-    data.creditCards.forEach((card) => {
-      if (scopeFilter !== 'ALL' && card.scope !== scopeFilter) return;
-
-      let cardDetailedSum = 0;
-      let itemsCount = 0;
-
-      data.cardTransactions.forEach((tx) => {
-        if (tx.cardId !== card.id) return;
-        if (tx.isPaused) return;
-
-        let active = false;
-        if (tx.type === 'recurring') {
-          if (getMonthDiff(tx.startMonth, month) >= 0) {
-            active = true;
-          }
-        } else if (tx.type === 'installment') {
-          const inst = getInstallmentInfo(tx.startMonth, tx.totalInstallments, month);
-          active = inst.isActive;
-        } else if (tx.type === 'single') {
-          if (tx.startMonth === month) {
-            active = true;
-          }
-        }
-
-        if (active) {
-          cardDetailedSum += tx.installmentAmount;
-          itemsCount += 1;
-        }
-      });
-
-      // Check real bank invoice if entered
-      const realInvoice = card.realInvoiceTotalByMonth?.[month];
-      let unmappedDiff = 0;
-      let effectiveCardTotal = cardDetailedSum;
-
-      if (realInvoice !== undefined) {
-        if (realInvoice > cardDetailedSum) {
-          unmappedDiff = realInvoice - cardDetailedSum;
-        }
-        effectiveCardTotal = Math.max(realInvoice, cardDetailedSum);
-      } else {
-        // Projeta tendência para meses futuros
-        let projectedTrend = 0;
-
-        if (card.manualProjectedTrend !== undefined && card.manualProjectedTrend !== null) {
-          projectedTrend = card.manualProjectedTrend;
-        } else {
-          // Busca a fatura real fechada mais recente
-          const realInvoiceMonths = Object.keys(card.realInvoiceTotalByMonth || {}).sort();
-          if (realInvoiceMonths.length > 0) {
-            const latestRealMonth = realInvoiceMonths[realInvoiceMonths.length - 1];
-            const latestRealTotal = card.realInvoiceTotalByMonth![latestRealMonth];
-
-            // Calcula compras mapeadas no último mês real
-            let sumForLatest = 0;
-            data.cardTransactions.forEach((tx) => {
-              if (tx.cardId !== card.id || tx.isPaused) return;
-              if (tx.type === 'recurring' && getMonthDiff(tx.startMonth, latestRealMonth) >= 0) sumForLatest += tx.installmentAmount;
-              else if (tx.type === 'installment' && getInstallmentInfo(tx.startMonth, tx.totalInstallments, latestRealMonth).isActive) sumForLatest += tx.installmentAmount;
-              else if (tx.type === 'single' && tx.startMonth === latestRealMonth) sumForLatest += tx.installmentAmount;
-            });
-
-            const baseDiff = Math.max(0, latestRealTotal - sumForLatest);
-            const monthsAhead = getMonthDiff(latestRealMonth, month);
-
-            if (monthsAhead > 0) {
-              // Redução automática de 10% ao mês (0.90^n) para projetar redução gradual de gastos avulsos
-              projectedTrend = Math.round(baseDiff * Math.pow(0.90, monthsAhead));
-            } else {
-              projectedTrend = baseDiff;
-            }
-          }
-        }
-
-        effectiveCardTotal = cardDetailedSum + projectedTrend;
-        unmappedDiff = projectedTrend;
-      }
-
-      cardTotalsByCard[card.id] = effectiveCardTotal;
-      cardUnmappedDiffByCard[card.id] = unmappedDiff;
-      cardItemsCountByCard[card.id] = itemsCount;
-      cardTotal += effectiveCardTotal;
-    });
-
     // 5. Fiscal Recovery / Rolling Balance Calculation
-    const previousBalance = carriedBalance;
+    // Check if there is an explicit starting bank balance registered in monthlyClosings for THIS month
+    let previousBalance = carriedBalance;
+    if (data.monthlyClosings && data.monthlyClosings[month] && typeof data.monthlyClosings[month].closingRealBalance === 'number') {
+      previousBalance = data.monthlyClosings[month].closingRealBalance;
+    }
+
     const overdraftCover = previousBalance < 0 ? Math.abs(previousBalance) : 0;
     const positiveCarryover = previousBalance > 0 ? previousBalance : 0;
 
@@ -362,12 +372,8 @@ export function calculateForecast(
 
     const finalBalance = totalIncome - totalExpenses;
 
-    // Track for next month: check if there is an explicit monthly closing registered for this month
-    if (data.monthlyClosings && data.monthlyClosings[month] && typeof data.monthlyClosings[month].closingRealBalance === 'number') {
-      carriedBalance = data.monthlyClosings[month].closingRealBalance;
-    } else {
-      carriedBalance = finalBalance;
-    }
+    // Track for next month
+    carriedBalance = finalBalance;
 
     summaries.push({
       month,
