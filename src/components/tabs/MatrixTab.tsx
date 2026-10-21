@@ -637,7 +637,9 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
                           const effective = Math.max(target, totalSpent);
                           const isOverflow = totalSpent > target;
 
-                          const isFutureOrVigente = s.month >= vigenteMonth;
+                          const isVigente = s.month === vigenteMonth;
+                          const isFuture = s.month > vigenteMonth;
+                          const isPast = s.month < vigenteMonth;
 
                           return (
                             <td
@@ -657,9 +659,30 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
                               } ${getCellHoverClass(
                                 env.id,
                                 s.month
-                              )} ${isOverflow ? 'text-rose-400 font-bold' : 'text-zinc-300'}`}
+                              )} ${isVigente && totalSpent > target ? 'text-rose-400 font-bold' : isOverflow && isPast ? 'text-rose-400 font-bold' : 'text-zinc-300'}`}
                             >
-                              {isFutureOrVigente ? (
+                              {isVigente ? (
+                                totalSpent > target ? (
+                                  <>
+                                    <div className="font-bold text-rose-400 text-xs">
+                                      {formatBRL(totalSpent)}
+                                    </div>
+                                    <div className="text-[9px] text-zinc-400 font-normal mt-0.5">
+                                      Previsto: {formatBRL(target)}
+                                    </div>
+                                  </>
+                                ) : (
+                                  <>
+                                    <div className="font-bold text-amber-300 text-xs">
+                                      {formatBRL(target)}
+                                    </div>
+                                    <div className="text-[9px] text-zinc-400 font-medium mt-0.5">
+                                      Real: {formatBRL(totalSpent)}
+                                      {cardTotal > 0 && <span className="text-indigo-400 ml-1">💳</span>}
+                                    </div>
+                                  </>
+                                )
+                              ) : isFuture ? (
                                 <>
                                   <div className="font-bold text-amber-300 text-xs">
                                     {formatBRL(target)}

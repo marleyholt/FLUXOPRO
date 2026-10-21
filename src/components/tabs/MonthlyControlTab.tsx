@@ -57,6 +57,7 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
     addBudgetSubItem,
     updateBudgetSubItem,
     deleteBudgetSubItem,
+    updateCardTransaction,
     isMonthClosed,
     setActiveTab,
   } = useFinance();
@@ -1306,7 +1307,7 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
                                 {unplannedCards.map((tx) => (
                                   <div
                                     key={`unplanned-card-${tx.id}`}
-                                    className="flex items-center justify-between text-xs py-1.5 px-2.5 rounded bg-indigo-950/30 border border-indigo-500/30 text-indigo-200"
+                                    className="flex flex-col sm:flex-row sm:items-center justify-between text-xs py-2 px-2.5 rounded bg-indigo-950/30 border border-indigo-500/30 text-indigo-200 gap-2"
                                   >
                                     <div className="truncate mr-2 flex items-center gap-2">
                                       <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-indigo-500/30 text-indigo-200">
