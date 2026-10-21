@@ -26,7 +26,7 @@ import {
   saveFirebaseConfig,
 } from '../services/dataService';
 import { INITIAL_SEED_DATA } from '../data/seedData';
-import { calculateForecast } from '../utils/calculations';
+import { calculateForecast, getMonthDiff } from '../utils/calculations';
 import { convertCsvItemToTransaction } from '../utils/csvParser';
 
 interface FinanceContextType {
@@ -47,7 +47,7 @@ interface FinanceContextType {
   currentMonthSummary: MonthSummary | undefined;
   
   // Sync & Cloud Actions
-  saveToFirebase: () => Promise<{ success: boolean; error?: string }>;
+  saveToFirebase: (dataOverride?: AppData) => Promise<{ success: boolean; error?: string }>;
   discardUnsavedChanges: () => Promise<void>;
 
   // Actions
@@ -104,7 +104,7 @@ interface FinanceContextType {
   isMonthClosed: (month: string) => boolean;
   closeMonth: (month: string) => void;
   reopenMonth: (month: string, reason?: string) => void;
-  saveMonthlyClosing: (record: MonthlyClosingRecord) => void;
+  saveMonthlyClosing: (record: MonthlyClosingRecord, andSetVigente?: boolean) => void;
   saveBankStatementResult: (
     month: string,
     statement: BankStatementUploadRecord,
@@ -180,22 +180,32 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   }, []);
 
   // Save changes locally in browser cache and mark unsaved state
-  const persistLocally = useCallback((newData: AppData) => {
-    setData(newData);
-    saveAppData(newData);
-    setHasUnsavedChanges(true);
-  }, []);
+  const persistLocally = useCallback(
+    (updater: AppData | ((prev: AppData) => AppData)) => {
+      setData((prev) => {
+        const nextData = typeof updater === 'function' ? updater(prev) : updater;
+        saveAppData(nextData);
+        return nextData;
+      });
+      setHasUnsavedChanges(true);
+    },
+    []
+  );
 
   // Sync to Firebase on demand
-  const saveToFirebase = useCallback(async (): Promise<{ success: boolean; error?: string }> => {
-    setIsSavingToFirebase(true);
-    const result = await saveAppDataToFirebase(data);
-    setIsSavingToFirebase(false);
-    if (result.success) {
-      setHasUnsavedChanges(false);
-    }
-    return result;
-  }, [data]);
+  const saveToFirebase = useCallback(
+    async (dataOverride?: AppData): Promise<{ success: boolean; error?: string }> => {
+      setIsSavingToFirebase(true);
+      const toSave = dataOverride || data;
+      const result = await saveAppDataToFirebase(toSave);
+      setIsSavingToFirebase(false);
+      if (result.success) {
+        setHasUnsavedChanges(false);
+      }
+      return result;
+    },
+    [data]
+  );
 
   // Discard local changes and reload from remote
   const discardUnsavedChanges = useCallback(async () => {
@@ -211,15 +221,20 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const setVigenteMonth = useCallback(
     (m: string) => {
-      persistLocally({
-        ...data,
-        settings: {
-          ...data.settings,
-          vigenteMonth: m,
-        },
+      setData((prevData) => {
+        const updatedData: AppData = {
+          ...prevData,
+          settings: {
+            ...prevData.settings,
+            vigenteMonth: m,
+          },
+        };
+        saveAppData(updatedData);
+        return updatedData;
       });
+      setHasUnsavedChanges(true);
     },
-    [data, persistLocally]
+    []
   );
 
   // Calculate rolling forecast
@@ -234,9 +249,32 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   // Month locking check
   const isMonthClosed = useCallback(
     (month: string) => {
-      return !!data.monthlyClosings?.[month]?.isClosed;
+      const currentVigente = data.settings.vigenteMonth || data.settings.startMonth || '2026-10';
+      // 1. O Mês Vigente NUNCA fica travado para edições!
+      if (month === currentVigente) {
+        return false;
+      }
+
+      // 2. Se o mês foi explicitamente reaberto pelo usuário
+      const closing = data.monthlyClosings?.[month];
+      if (closing && closing.isClosed === false && closing.reopenedAt) {
+        return false;
+      }
+
+      // 3. Se tiver marcação explícita de fechado no histórico
+      if (closing?.isClosed) {
+        return true;
+      }
+
+      // 4. Meses anteriores ao Mês Vigente ficam travados por padrão
+      if (getMonthDiff(month, currentVigente) > 0) {
+        return true;
+      }
+
+      // 5. Meses futuros permanecem abertos para planejamento e projeção
+      return false;
     },
-    [data.monthlyClosings]
+    [data.monthlyClosings, data.settings.vigenteMonth, data.settings.startMonth]
   );
 
   // Income actions
@@ -866,18 +904,46 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   // Monthly Closing Actions
   const saveMonthlyClosing = useCallback(
-    (record: MonthlyClosingRecord) => {
-      const currentClosings = { ...(data.monthlyClosings || {}) };
-      currentClosings[record.month] = {
-        ...record,
-        closedAt: new Date().toISOString(),
-      };
-      persistLocally({
-        ...data,
-        monthlyClosings: currentClosings,
+    (record: MonthlyClosingRecord, andSetVigente: boolean = true) => {
+      setData((prevData) => {
+        const currentClosings = { ...(prevData.monthlyClosings || {}) };
+        const targetMonth = record.month;
+
+        // O mês que está sendo aberto NUNCA fica travado (permanece 100% editável)
+        currentClosings[targetMonth] = {
+          ...record,
+          isClosed: false,
+          closedAt: new Date().toISOString(),
+        };
+
+        // Trava os meses anteriores ao mês aberto
+        if (andSetVigente) {
+          Object.keys(currentClosings).forEach((m) => {
+            if (getMonthDiff(m, targetMonth) > 0) {
+              currentClosings[m] = {
+                ...currentClosings[m],
+                isClosed: true,
+              };
+            }
+          });
+        }
+
+        const updatedData: AppData = {
+          ...prevData,
+          monthlyClosings: currentClosings,
+          settings: andSetVigente
+            ? {
+                ...prevData.settings,
+                vigenteMonth: targetMonth,
+              }
+            : prevData.settings,
+        };
+        saveAppData(updatedData);
+        return updatedData;
       });
+      setHasUnsavedChanges(true);
     },
-    [data, persistLocally]
+    []
   );
 
 

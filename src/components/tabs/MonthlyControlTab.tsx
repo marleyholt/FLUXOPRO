@@ -24,6 +24,8 @@ import {
   Layers,
   ChevronDown,
   ChevronUp,
+  Search,
+  Filter,
 } from 'lucide-react';
 import { useFinance } from '../../context/FinanceContext';
 import { formatBRL, getMonthDiff, getInstallmentInfo } from '../../utils/calculations';
@@ -64,7 +66,10 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
   const [billFilter, setBillFilter] = useState<'ALL' | 'PENDING' | 'PAID'>('ALL');
   const [editingEnvelopeId, setEditingEnvelopeId] = useState<string | null>(null);
   const [newTargetValue, setNewTargetValue] = useState<string>('');
-  const [minimizedEnvelopes, setMinimizedEnvelopes] = useState<Record<string, boolean>>({});
+  // Padrão: Categorias minimizadas. O usuário abre se decidir.
+  const [expandedEnvelopes, setExpandedEnvelopes] = useState<Record<string, boolean>>({});
+  const [categoryFilter, setCategoryFilter] = useState<string>('ALL');
+  const [categorySearchQuery, setCategorySearchQuery] = useState<string>('');
   const [subItemInputs, setSubItemInputs] = useState<Record<string, { name: string; amount: string }>>({});
 
   // Nova Categoria Modal State
@@ -579,7 +584,7 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
               )}
             </div>
 
-            {/* Envelopes List */}
+            {/* Envelopes List & Filter Bar */}
             <div className="space-y-4">
               {(() => {
                 const envelopeList: Array<{ id: string; name: string; targetAmount: number; subItems?: any[]; isExtra?: boolean }> = [
@@ -618,11 +623,135 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
                   });
                 });
 
-                return envelopeList.map((env) => {
-                  const lowerName = env.name.trim().toLowerCase();
+                // Filter categories
+                const filteredEnvelopes = envelopeList.filter((env) => {
+                  if (categoryFilter !== 'ALL' && env.id !== categoryFilter && env.name.toLowerCase() !== categoryFilter.toLowerCase()) {
+                    return false;
+                  }
+                  if (categorySearchQuery.trim() && !env.name.toLowerCase().includes(categorySearchQuery.trim().toLowerCase())) {
+                    return false;
+                  }
+                  return true;
+                });
 
-                  // Active fixed/installment/periodic expenses assigned to this category for selectedMonth
-                  const activeCategoryExpenses = data.expenses.filter((exp) => {
+                const expandAll = () => {
+                  const all: Record<string, boolean> = {};
+                  envelopeList.forEach((e) => { all[e.id] = true; });
+                  setExpandedEnvelopes(all);
+                };
+
+                const collapseAll = () => {
+                  setExpandedEnvelopes({});
+                };
+
+                return (
+                  <>
+                    {/* Barra de Filtro de Categoria & Controle de Visualização */}
+                    <div className="p-3 rounded-xl bg-zinc-950/90 border border-zinc-800 space-y-2 text-xs">
+                      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2">
+                        
+                        {/* Seletor de Categoria e Busca */}
+                        <div className="flex-1 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                          <div className="relative flex-1">
+                            <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-2.5 top-2.5" />
+                            <input
+                              type="text"
+                              placeholder="Buscar categoria..."
+                              value={categorySearchQuery}
+                              onChange={(e) => setCategorySearchQuery(e.target.value)}
+                              className="w-full pl-8 pr-7 py-1.5 rounded-lg bg-zinc-900 border border-zinc-700 text-xs text-white placeholder-zinc-500 outline-none focus:border-emerald-500"
+                            />
+                            {categorySearchQuery && (
+                              <button
+                                onClick={() => setCategorySearchQuery('')}
+                                className="absolute right-2 top-2 text-zinc-400 hover:text-white"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-1.5">
+                            <Filter className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                            <select
+                              value={categoryFilter}
+                              onChange={(e) => {
+                                setCategoryFilter(e.target.value);
+                                if (e.target.value !== 'ALL') {
+                                  // Auto-expande a categoria selecionada para facilitar visualização
+                                  setExpandedEnvelopes((prev) => ({ ...prev, [e.target.value]: true }));
+                                }
+                              }}
+                              className="px-2.5 py-1.5 rounded-lg bg-zinc-900 border border-zinc-700 text-xs text-white font-medium outline-none focus:border-emerald-500 max-w-[200px]"
+                            >
+                              <option value="ALL">Todas as Categorias ({envelopeList.length})</option>
+                              {envelopeList.map((e) => (
+                                <option key={e.id} value={e.id}>
+                                  {e.name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+
+                        {/* Botões Expandir e Recolher Todas */}
+                        <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-auto">
+                          <button
+                            onClick={expandAll}
+                            className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition"
+                            title="Expandir todas as categorias"
+                          >
+                            Expandir Todas
+                          </button>
+                          <button
+                            onClick={collapseAll}
+                            className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition"
+                            title="Minimizar todas as categorias (Padrão)"
+                          >
+                            Recolher Todas
+                          </button>
+                        </div>
+
+                      </div>
+
+                      {/* Contador de Filtro */}
+                      {(categoryFilter !== 'ALL' || categorySearchQuery.trim()) && (
+                        <div className="flex items-center justify-between text-[11px] text-zinc-400 pt-1 border-t border-zinc-850">
+                          <span>
+                            Exibindo <strong>{filteredEnvelopes.length}</strong> de <strong>{envelopeList.length}</strong> categorias
+                          </span>
+                          <button
+                            onClick={() => {
+                              setCategoryFilter('ALL');
+                              setCategorySearchQuery('');
+                            }}
+                            className="text-emerald-400 hover:underline"
+                          >
+                            Limpar filtros
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {filteredEnvelopes.length === 0 ? (
+                      <div className="p-8 text-center bg-zinc-950/60 rounded-xl border border-zinc-800 space-y-2">
+                        <p className="text-zinc-400 text-xs">Nenhuma categoria encontrada com os filtros selecionados.</p>
+                        <button
+                          onClick={() => {
+                            setCategoryFilter('ALL');
+                            setCategorySearchQuery('');
+                          }}
+                          className="px-3 py-1.5 rounded-lg text-xs font-bold bg-zinc-800 hover:bg-zinc-700 text-emerald-300"
+                        >
+                          Ver Todas as Categorias
+                        </button>
+                      </div>
+                    ) : (
+                      filteredEnvelopes.map((env) => {
+                        const lowerName = env.name.trim().toLowerCase();
+
+                        // Active fixed/installment/periodic expenses assigned to this category for selectedMonth
+                        const activeCategoryExpenses = data.expenses.filter((exp) => {
                     let isActive = false;
                     if (exp.frequency === 'fixed') {
                       isActive = getMonthDiff(exp.startMonth, selectedMonth) >= 0;
@@ -677,7 +806,8 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
                   const percentage = target > 0 ? Math.round((totalSpent / target) * 100) : totalSpent > 0 ? 100 : 0;
                   const remaining = target - totalSpent;
                   const isOverBudget = remaining < 0;
-                  const isMinimized = !!minimizedEnvelopes[env.id];
+                  // Padrão: minimizado. Aberto apenas se isExpanded for true.
+                  const isExpanded = !!expandedEnvelopes[env.id];
 
                 // Color status
                 const statusColor =
@@ -696,13 +826,13 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
                     {/* Envelope Header */}
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                       <div className="flex items-center gap-2">
-                        {/* Minimize Button */}
+                        {/* Minimize/Expand Button */}
                         <button
-                          onClick={() => setMinimizedEnvelopes({ ...minimizedEnvelopes, [env.id]: !isMinimized })}
+                          onClick={() => setExpandedEnvelopes({ ...expandedEnvelopes, [env.id]: !isExpanded })}
                           className="p-1 rounded-lg text-zinc-400 hover:text-white bg-zinc-900 border border-zinc-800 transition"
-                          title={isMinimized ? "Expandir e ver detalhes" : "Minimizar categoria"}
+                          title={isExpanded ? "Minimizar categoria" : "Expandir e ver detalhes"}
                         >
-                          {isMinimized ? <ChevronDown className="w-3.5 h-3.5 text-emerald-400" /> : <ChevronUp className="w-3.5 h-3.5 text-zinc-400" />}
+                          {isExpanded ? <ChevronUp className="w-3.5 h-3.5 text-zinc-400" /> : <ChevronDown className="w-3.5 h-3.5 text-emerald-400" />}
                         </button>
 
                         <span className="font-bold text-zinc-100 text-sm">{env.name}</span>
@@ -801,8 +931,8 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
                       </div>
                     </div>
 
-                    {/* If NOT minimized, display Subcategories and Detailed Expense Logs */}
-                    {!isMinimized && (
+                    {/* If expanded, display Subcategories and Detailed Expense Logs (Minimizado por padrão) */}
+                    {isExpanded && (
                       <div className="space-y-3 pt-2 border-t border-zinc-900">
                         {/* Subcategorias / Itens do Teto Orçado */}
                         <div className="space-y-2 bg-zinc-900/40 p-3 rounded-xl border border-zinc-800/60">
@@ -984,8 +1114,11 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
                     )}
                   </div>
                 );
-              });
-            })()}
+              })
+            )}
+          </>
+        );
+      })()}
           </div>
 
           </div>

@@ -30,6 +30,7 @@ import {
   AreaChart,
   Area,
   Legend,
+  ReferenceLine,
 } from 'recharts';
 import { useFinance } from '../../context/FinanceContext';
 import {
@@ -63,6 +64,8 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
     setActiveTab,
     updateSettings,
   } = useFinance();
+
+  const [chartViewMode, setChartViewMode] = useState<'composed' | 'area' | 'balance'>('composed');
 
   // Generate available months for rolling forecast start month selector
   const availableMonths: { value: string; label: string }[] = [];
@@ -228,14 +231,28 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
 
 
   // Prepare data for 12M Cashflow Area & Composed Chart
-  const chartData = summaries.slice(0, 12).map((s) => ({
-    label: s.label,
-    month: s.month,
-    Entradas: s.totalIncome,
-    Saidas: s.totalExpenses,
-    SaldoLiquido: s.totalIncome - s.totalExpenses,
-    SaldoAcumulado: s.finalBalance,
-  }));
+  const chartData = summaries.slice(0, 12).map((s) => {
+    // Entradas reais do mês (sem inflar com o saldo anterior)
+    const receitasReais = s.fixedIncome + s.variableIncome;
+    // Saídas consolidadas do mês (contas fixas + envelopes variáveis + cartões + juros cheque especial)
+    const despesasReais = s.totalExpenses;
+    const saldoLiquidoMes = receitasReais - despesasReais;
+    return {
+      label: s.label,
+      month: s.month,
+      Entradas: receitasReais,
+      Saidas: despesasReais,
+      SaldoLiquido: saldoLiquidoMes,
+      SaldoAcumulado: s.finalBalance,
+      SaldoAnterior: s.previousBalance,
+    };
+  });
+
+  const totalEntradas12M = chartData.reduce((acc, curr) => acc + curr.Entradas, 0);
+  const totalSaidas12M = chartData.reduce((acc, curr) => acc + curr.Saidas, 0);
+  const saldoFinal12M = chartData[chartData.length - 1]?.SaldoAcumulado || 0;
+  const mediaEntradas12M = chartData.length > 0 ? totalEntradas12M / chartData.length : 0;
+  const mediaSaidas12M = chartData.length > 0 ? totalSaidas12M / chartData.length : 0;
 
   // Activity Tracker Helpers
   const formatTimeAgo = (iso?: string) => {
@@ -252,33 +269,85 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
   const lastVisitText = formatTimeAgo(data.settings.lastVisitTimestamp);
   const lastExp = data.settings.lastExpenseLogged;
 
-  // Custom Tooltips
+  // Custom Tooltips - extrai com segurança do payload completo
   const CustomAreaTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
-      const pSaldo = payload.find((p: any) => p.dataKey === 'SaldoAcumulado')?.value || 0;
-      const pEntradas = payload.find((p: any) => p.dataKey === 'Entradas')?.value || 0;
-      const pSaidas = payload.find((p: any) => p.dataKey === 'Saidas')?.value || 0;
+      const datum = payload[0]?.payload || {};
+      const pEntradas = datum.Entradas ?? 0;
+      const pSaidas = datum.Saidas ?? 0;
+      const pLiquido = datum.SaldoLiquido ?? (pEntradas - pSaidas);
+      const pSaldo = datum.SaldoAcumulado ?? 0;
+      const pAnterior = datum.SaldoAnterior ?? 0;
+
       return (
-        <div className="bg-zinc-900 border border-zinc-700/80 rounded-xl p-3 shadow-xl text-xs space-y-1.5 min-w-[210px]">
-          <div className="font-bold text-white border-b border-zinc-800 pb-1 flex justify-between">
-            <span>Mês: {label}</span>
-            <span className={pSaldo >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
-              {pSaldo >= 0 ? 'Positivo' : 'Negativo'}
+        <div className="bg-zinc-950/95 border border-zinc-700/80 rounded-xl p-3.5 shadow-2xl text-xs space-y-2 min-w-[240px] backdrop-blur-md">
+          <div className="font-bold text-white border-b border-zinc-800 pb-1.5 flex justify-between items-center">
+            <span className="text-zinc-200">Mês: {label}</span>
+            <span
+              className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                pLiquido >= 0
+                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                  : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+              }`}
+            >
+              {pLiquido >= 0 ? 'Superávit Mensal' : 'Déficit Mensal'}
             </span>
           </div>
-          <div className="flex justify-between text-zinc-300">
-            <span>Entradas Projetadas:</span>
-            <span className="font-mono-numbers text-emerald-400 font-semibold">{formatBRL(pEntradas)}</span>
+
+          <div className="space-y-1.5">
+            <div className="flex justify-between items-center text-zinc-300">
+              <span className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block shadow-sm shadow-emerald-500/50" />
+                <span className="font-medium">(+) Entradas (Receitas):</span>
+              </span>
+              <span className="font-mono-numbers text-emerald-400 font-bold">
+                +{formatBRL(pEntradas)}
+              </span>
+            </div>
+
+            <div className="flex justify-between items-center text-zinc-300">
+              <span className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block shadow-sm shadow-rose-500/50" />
+                <span className="font-medium">(-) Saídas (Despesas):</span>
+              </span>
+              <span className="font-mono-numbers text-rose-400 font-bold">
+                -{formatBRL(pSaidas)}
+              </span>
+            </div>
+
+            <div className="flex justify-between items-center text-zinc-400 text-[11px] pt-1 border-t border-zinc-800/80">
+              <span>(=) Resultado do Mês:</span>
+              <span
+                className={`font-mono-numbers font-bold ${
+                  pLiquido >= 0 ? 'text-emerald-300' : 'text-rose-400'
+                }`}
+              >
+                {pLiquido >= 0 ? `+${formatBRL(pLiquido)}` : formatBRL(pLiquido)}
+              </span>
+            </div>
+
+            {pAnterior !== 0 && (
+              <div className="flex justify-between items-center text-zinc-400 text-[11px]">
+                <span>Saldo Inicial / Mês Anterior:</span>
+                <span
+                  className={`font-mono-numbers font-medium ${
+                    pAnterior >= 0 ? 'text-zinc-300' : 'text-rose-400'
+                  }`}
+                >
+                  {formatBRL(pAnterior)}
+                </span>
+              </div>
+            )}
           </div>
-          <div className="flex justify-between text-zinc-300">
-            <span>Saídas Projetadas:</span>
-            <span className="font-mono-numbers text-rose-400 font-semibold">{formatBRL(pSaidas)}</span>
-          </div>
-          <div className="border-t border-zinc-800 pt-1.5 flex justify-between font-bold">
-            <span className="text-zinc-200">Saldo Acumulado:</span>
+
+          <div className="border-t border-zinc-800 pt-2 flex justify-between items-center font-bold">
+            <span className="text-zinc-200 flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-sky-400 inline-block shadow-sm shadow-sky-400/50" />
+              <span>(🏦) Saldo Acumulado:</span>
+            </span>
             <span
-              className={`font-mono-numbers ${
-                pSaldo >= 0 ? 'text-emerald-300 font-extrabold' : 'text-rose-400 font-extrabold'
+              className={`font-mono-numbers text-sm ${
+                pSaldo >= 0 ? 'text-sky-300 font-extrabold' : 'text-rose-400 font-extrabold'
               }`}
             >
               {formatBRL(pSaldo)}
@@ -529,52 +598,236 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
         </div>
       </div>
 
-      {/* NEW: RECHARTS AREA CHART - EVOLUÇÃO DO FLUXO DE CAIXA 12 MESES */}
-      <div className="p-5 rounded-2xl bg-zinc-900/90 border border-zinc-800/80 shadow-sm">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+      {/* RECHARTS COMPOSED & AREA CHART - EVOLUÇÃO DO FLUXO DE CAIXA 12 MESES */}
+      <div className="p-5 rounded-2xl bg-zinc-900/90 border border-zinc-800/80 shadow-sm space-y-4">
+        {/* Header com Título, Seletor de Modo e Legenda */}
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-zinc-800/70">
           <div>
             <h2 className="text-base font-bold text-white flex items-center gap-2">
               <TrendingUp className="w-4 h-4 text-emerald-400" />
               Evolução do Fluxo de Caixa Projetado (Próximos 12 Meses)
             </h2>
-            <p className="text-xs text-zinc-400">
-              Gráfico de área ilustrando a evolução líquida do saldo acumulado mês a mês
+            <p className="text-xs text-zinc-400 mt-0.5">
+              Confronto visual direto entre <strong>Receitas (Entradas)</strong>, <strong>Despesas (Saídas)</strong> e a trajetória do <strong>Saldo Acumulado</strong> mês a mês
             </p>
           </div>
-          <div className="flex items-center gap-3 text-xs">
-            <span className="flex items-center gap-1.5 text-emerald-400 font-semibold">
-              <span className="w-2.5 h-2.5 rounded bg-emerald-500 inline-block" /> Saldo Acumulado
-            </span>
+
+          {/* Toggle de Modos de Visualização */}
+          <div className="flex items-center gap-1.5 bg-zinc-950 p-1 rounded-xl border border-zinc-800 self-start lg:self-auto">
+            <button
+              onClick={() => setChartViewMode('composed')}
+              className={`px-2.5 py-1 text-xs rounded-lg font-semibold transition ${
+                chartViewMode === 'composed'
+                  ? 'bg-zinc-800 text-white shadow-sm'
+                  : 'text-zinc-400 hover:text-zinc-200'
+              }`}
+              title="Exibe barras de Receitas e Despesas lado a lado com a linha de Saldo Acumulado"
+            >
+              📊 Barras + Saldo
+            </button>
+            <button
+              onClick={() => setChartViewMode('area')}
+              className={`px-2.5 py-1 text-xs rounded-lg font-semibold transition ${
+                chartViewMode === 'area'
+                  ? 'bg-zinc-800 text-white shadow-sm'
+                  : 'text-zinc-400 hover:text-zinc-200'
+              }`}
+              title="Exibe áreas preenchidas de Receitas vs Despesas"
+            >
+              🌊 Áreas de Fluxo
+            </button>
+            <button
+              onClick={() => setChartViewMode('balance')}
+              className={`px-2.5 py-1 text-xs rounded-lg font-semibold transition ${
+                chartViewMode === 'balance'
+                  ? 'bg-zinc-800 text-white shadow-sm'
+                  : 'text-zinc-400 hover:text-zinc-200'
+              }`}
+              title="Foca exclusivamente na curva do Saldo Acumulado em conta"
+            >
+              📈 Curva de Saldo
+            </button>
           </div>
         </div>
 
-        <div className="h-72 w-full">
+        {/* Indicadores Resumo dos 12 Meses */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="p-3 rounded-xl bg-zinc-950/70 border border-emerald-500/20 flex items-center justify-between">
+            <div>
+              <span className="text-[11px] text-zinc-400 flex items-center gap-1.5 font-medium">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block shadow-sm shadow-emerald-500/50" />
+                Receitas (12 Meses)
+              </span>
+              <span className="text-base font-bold font-mono-numbers text-emerald-400 block mt-0.5">
+                {formatBRL(totalEntradas12M)}
+              </span>
+              <span className="text-[10px] text-zinc-500 font-mono-numbers">
+                Média: {formatBRL(mediaEntradas12M)}/mês
+              </span>
+            </div>
+            <TrendingUp className="w-5 h-5 text-emerald-500/40" />
+          </div>
+
+          <div className="p-3 rounded-xl bg-zinc-950/70 border border-rose-500/20 flex items-center justify-between">
+            <div>
+              <span className="text-[11px] text-zinc-400 flex items-center gap-1.5 font-medium">
+                <span className="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block shadow-sm shadow-rose-500/50" />
+                Despesas (12 Meses)
+              </span>
+              <span className="text-base font-bold font-mono-numbers text-rose-400 block mt-0.5">
+                {formatBRL(totalSaidas12M)}
+              </span>
+              <span className="text-[10px] text-zinc-500 font-mono-numbers">
+                Média: {formatBRL(mediaSaidas12M)}/mês
+              </span>
+            </div>
+            <TrendingDown className="w-5 h-5 text-rose-500/40" />
+          </div>
+
+          <div className="p-3 rounded-xl bg-zinc-950/70 border border-sky-500/20 flex items-center justify-between">
+            <div>
+              <span className="text-[11px] text-zinc-400 flex items-center gap-1.5 font-medium">
+                <span className="w-2.5 h-2.5 rounded-full bg-sky-400 inline-block shadow-sm shadow-sky-400/50" />
+                Saldo Acumulado Final (Mês 12)
+              </span>
+              <span
+                className={`text-base font-extrabold font-mono-numbers block mt-0.5 ${
+                  saldoFinal12M >= 0 ? 'text-sky-300' : 'text-rose-400'
+                }`}
+              >
+                {formatBRL(saldoFinal12M)}
+              </span>
+              <span className="text-[10px] text-zinc-500">
+                {saldoFinal12M >= 0 ? 'Projeção Positiva em Caixa' : 'Atenção: Projeção Negativa'}
+              </span>
+            </div>
+            <DollarSign className="w-5 h-5 text-sky-400/40" />
+          </div>
+        </div>
+
+        {/* Gráfico Recharts */}
+        <div className="h-80 w-full pt-2">
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
-              <defs>
-                <linearGradient id="colorSaldo" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#10b981" stopOpacity={0.6} />
-                  <stop offset="95%" stopColor="#10b981" stopOpacity={0.0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
-              <XAxis dataKey="label" stroke="#71717a" fontSize={11} tickLine={false} />
-              <YAxis
-                stroke="#71717a"
-                fontSize={11}
-                tickLine={false}
-                tickFormatter={(val) => formatCompactBRL(val)}
-              />
-              <Tooltip content={<CustomAreaTooltip />} />
-              <Area
-                type="monotone"
-                dataKey="SaldoAcumulado"
-                stroke="#34d399"
-                strokeWidth={3}
-                fillOpacity={1}
-                fill="url(#colorSaldo)"
-              />
-            </AreaChart>
+            {chartViewMode === 'composed' ? (
+              <ComposedChart data={chartData} margin={{ top: 15, right: 15, left: -10, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="colorSaldoLine" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#38bdf8" stopOpacity={0.4} />
+                    <stop offset="95%" stopColor="#38bdf8" stopOpacity={0.0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
+                <XAxis dataKey="label" stroke="#71717a" fontSize={11} tickLine={false} />
+                <YAxis
+                  stroke="#71717a"
+                  fontSize={11}
+                  tickLine={false}
+                  tickFormatter={(val) => formatCompactBRL(val)}
+                />
+                <Tooltip content={<CustomAreaTooltip />} />
+                <ReferenceLine y={0} stroke="#52525b" strokeDasharray="3 3" />
+                <Bar
+                  dataKey="Entradas"
+                  name="Receitas"
+                  fill="#10b981"
+                  radius={[4, 4, 0, 0]}
+                  maxBarSize={28}
+                />
+                <Bar
+                  dataKey="Saidas"
+                  name="Despesas"
+                  fill="#f43f5e"
+                  radius={[4, 4, 0, 0]}
+                  maxBarSize={28}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="SaldoAcumulado"
+                  name="Saldo Acumulado"
+                  stroke="#38bdf8"
+                  strokeWidth={3}
+                  dot={{ r: 3.5, fill: '#0284c7', stroke: '#38bdf8', strokeWidth: 1.5 }}
+                  activeDot={{ r: 6, fill: '#38bdf8' }}
+                />
+              </ComposedChart>
+            ) : chartViewMode === 'area' ? (
+              <AreaChart data={chartData} margin={{ top: 15, right: 15, left: -10, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="colorEntradasArea" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.5} />
+                    <stop offset="95%" stopColor="#10b981" stopOpacity={0.0} />
+                  </linearGradient>
+                  <linearGradient id="colorSaidasArea" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#f43f5e" stopOpacity={0.5} />
+                    <stop offset="95%" stopColor="#f43f5e" stopOpacity={0.0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
+                <XAxis dataKey="label" stroke="#71717a" fontSize={11} tickLine={false} />
+                <YAxis
+                  stroke="#71717a"
+                  fontSize={11}
+                  tickLine={false}
+                  tickFormatter={(val) => formatCompactBRL(val)}
+                />
+                <Tooltip content={<CustomAreaTooltip />} />
+                <ReferenceLine y={0} stroke="#52525b" strokeDasharray="3 3" />
+                <Area
+                  type="monotone"
+                  dataKey="Entradas"
+                  name="Receitas"
+                  stroke="#10b981"
+                  strokeWidth={2}
+                  fillOpacity={1}
+                  fill="url(#colorEntradasArea)"
+                />
+                <Area
+                  type="monotone"
+                  dataKey="Saidas"
+                  name="Despesas"
+                  stroke="#f43f5e"
+                  strokeWidth={2}
+                  fillOpacity={1}
+                  fill="url(#colorSaidasArea)"
+                />
+                <Line
+                  type="monotone"
+                  dataKey="SaldoAcumulado"
+                  name="Saldo Acumulado"
+                  stroke="#38bdf8"
+                  strokeWidth={3}
+                  dot={{ r: 3.5, fill: '#0284c7', stroke: '#38bdf8', strokeWidth: 1.5 }}
+                />
+              </AreaChart>
+            ) : (
+              <AreaChart data={chartData} margin={{ top: 15, right: 15, left: -10, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="colorSaldoOnly" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#38bdf8" stopOpacity={0.6} />
+                    <stop offset="95%" stopColor="#38bdf8" stopOpacity={0.0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
+                <XAxis dataKey="label" stroke="#71717a" fontSize={11} tickLine={false} />
+                <YAxis
+                  stroke="#71717a"
+                  fontSize={11}
+                  tickLine={false}
+                  tickFormatter={(val) => formatCompactBRL(val)}
+                />
+                <Tooltip content={<CustomAreaTooltip />} />
+                <ReferenceLine y={0} stroke="#52525b" strokeDasharray="3 3" />
+                <Area
+                  type="monotone"
+                  dataKey="SaldoAcumulado"
+                  name="Saldo Acumulado"
+                  stroke="#38bdf8"
+                  strokeWidth={3}
+                  fillOpacity={1}
+                  fill="url(#colorSaldoOnly)"
+                />
+              </AreaChart>
+            )}
           </ResponsiveContainer>
         </div>
       </div>

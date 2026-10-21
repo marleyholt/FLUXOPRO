@@ -27,6 +27,7 @@ import {
   CheckSquare,
 } from 'lucide-react';
 import { useFinance } from '../../context/FinanceContext';
+import { MonthlyClosingRecord, AppData } from '../../types/finance';
 import {
   formatBRL,
   getMonthDiff,
@@ -57,6 +58,7 @@ export const MonthlyClosingTab: React.FC = () => {
 
   const isClosed = isMonthClosed(selectedMonth);
   const isVigente = vigenteMonth === selectedMonth;
+  const selectedMonthLabel = getMonthLabel(selectedMonth);
 
   const current = currentMonthSummary || summaries[0];
   const nextMonth = addMonths(selectedMonth, 1);
@@ -105,6 +107,24 @@ export const MonthlyClosingTab: React.FC = () => {
   // Reopen Modal State
   const [isReopenModalOpen, setIsReopenModalOpen] = useState<boolean>(false);
   const [reopenReasonInput, setReopenReasonInput] = useState<string>('');
+
+  // Lista de meses selecionáveis incluindo histórico recente e projeções
+  const selectableMonths = React.useMemo(() => {
+    const map = new Map<string, string>();
+    for (let i = -6; i < 0; i++) {
+      const m = addMonths(vigenteMonth, i);
+      map.set(m, getMonthLabel(m));
+    }
+    Object.keys(data.monthlyClosings || {}).forEach((m) => {
+      map.set(m, getMonthLabel(m));
+    });
+    summaries.forEach((s) => {
+      map.set(s.month, s.label);
+    });
+    return Array.from(map.entries())
+      .map(([value, label]) => ({ value, label }))
+      .sort((a, b) => a.value.localeCompare(b.value));
+  }, [vigenteMonth, data.monthlyClosings, summaries]);
 
   // Sync inputs when selectedMonth or existingClosing changes
   useEffect(() => {
@@ -251,7 +271,7 @@ export const MonthlyClosingTab: React.FC = () => {
       return;
     }
 
-    saveMonthlyClosing({
+    const closingRecord: MonthlyClosingRecord = {
       month: selectedMonth,
       closingRealBalance: numericVal,
       projectedBalance,
@@ -264,17 +284,40 @@ export const MonthlyClosingTab: React.FC = () => {
       pushedDebts: existingClosing?.pushedDebts || [],
       notes: closingNotes.trim() || undefined,
       reopenHistory: existingClosing?.reopenHistory || [],
-      isClosed: true,
-    });
+      isClosed: false, // A abertura do mês NUNCA trava as edições dele!
+    };
 
-    setVigenteMonth(selectedMonth);
+    saveMonthlyClosing(closingRecord, true);
 
     if (isUsingFirebase) {
-      await saveToFirebase();
+      const currentClosings = { ...(data.monthlyClosings || {}) };
+      currentClosings[selectedMonth] = {
+        ...closingRecord,
+        isClosed: false,
+        closedAt: new Date().toISOString(),
+      };
+      // Trava automaticamente os meses anteriores ao mês aberto
+      Object.keys(currentClosings).forEach((m) => {
+        if (getMonthDiff(m, selectedMonth) > 0) {
+          currentClosings[m] = {
+            ...currentClosings[m],
+            isClosed: true,
+          };
+        }
+      });
+      const dataToSync: AppData = {
+        ...data,
+        monthlyClosings: currentClosings,
+        settings: {
+          ...data.settings,
+          vigenteMonth: selectedMonth,
+        },
+      };
+      await saveToFirebase(dataToSync);
     }
 
     setSavedSuccessMsg(
-      `O mês de ${current.label} foi gravado, sincronizado e definido como MÊS VIGENTE!`
+      `O mês de ${selectedMonthLabel} foi aberto com sucesso, liberado para edições e definido como MÊS VIGENTE!`
     );
     setTimeout(() => setSavedSuccessMsg(null), 5000);
   };
@@ -287,7 +330,7 @@ export const MonthlyClosingTab: React.FC = () => {
     reopenMonth(selectedMonth, reopenReasonInput.trim());
     setIsReopenModalOpen(false);
     setReopenReasonInput('');
-    setSavedSuccessMsg(`Mês de ${current.label} reaberto com sucesso para edições!`);
+    setSavedSuccessMsg(`Mês de ${selectedMonthLabel} reaberto com sucesso para edições!`);
     setTimeout(() => setSavedSuccessMsg(null), 4000);
   };
 
@@ -321,11 +364,15 @@ export const MonthlyClosingTab: React.FC = () => {
             onChange={(e) => setSelectedMonth(e.target.value)}
             className="px-3 py-2 rounded-xl bg-zinc-950 border border-zinc-700 text-xs font-bold text-white outline-none focus:border-emerald-500 transition"
           >
-            {summaries.map((s) => (
-              <option key={s.month} value={s.month}>
-                {s.label} ({s.month}) {s.month === vigenteMonth ? '⭐ Vigente' : ''} {data.monthlyClosings?.[s.month]?.isClosed ? '🔒' : ''}
-              </option>
-            ))}
+            {selectableMonths.map((m) => {
+              const isPast = getMonthDiff(m.value, vigenteMonth) > 0;
+              const isClosedOpt = isMonthClosed(m.value);
+              return (
+                <option key={m.value} value={m.value}>
+                  {m.label} ({m.value}) {m.value === vigenteMonth ? '⭐ Vigente' : ''} {isClosedOpt ? '🔒 Fechado' : '✅ Aberto'}
+                </option>
+              );
+            })}
           </select>
         </div>
       </div>
@@ -338,13 +385,14 @@ export const MonthlyClosingTab: React.FC = () => {
               <Lock className="w-5 h-5" />
             </div>
             <div>
-              <strong className="text-white text-sm block">Status: Abertura Consolidada / Mês Fechado 🔒</strong>
+              <strong className="text-white text-sm block">Histórico Passado: Mês Fechado 🔒 ({selectedMonthLabel})</strong>
               <p className="text-amber-300/90 mt-0.5">
-                Os dados de abertura de <strong>{current.label}</strong> estão consolidados e protegidos contra edições acidentais.
+                Este mês é anterior ao Mês Vigente e está travado para proteger o histórico financeiro contra edições acidentais.
               </p>
             </div>
           </div>
           <button
+            type="button"
             onClick={() => {
               setReopenReasonInput('');
               setIsReopenModalOpen(true);
@@ -355,6 +403,28 @@ export const MonthlyClosingTab: React.FC = () => {
             <span>Reabrir Mês para Ajustes</span>
           </button>
         </div>
+      ) : isVigente ? (
+        <div className="p-4 rounded-2xl bg-emerald-950/30 border border-emerald-500/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs shadow-sm">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
+              <Sparkles className="w-5 h-5" />
+            </div>
+            <div>
+              <strong className="text-white text-sm flex items-center gap-2">
+                <span>Mês Vigente Ativo ({selectedMonthLabel})</span>
+                <span className="px-2 py-0.5 rounded text-[10px] bg-emerald-500/20 text-emerald-300 font-extrabold border border-emerald-500/30">
+                  ABERTO E TOTALMENTE EDITÁVEL
+                </span>
+              </strong>
+              <p className="text-emerald-300/80 mt-0.5">
+                Este é o mês corrente. Todos os lançamentos, despesas e envelopes em Previsão e Controle estão 100% liberados para edições e novos lançamentos normais.
+              </p>
+            </div>
+          </div>
+          <span className="text-[11px] font-semibold text-emerald-400 bg-emerald-500/10 px-3 py-1.5 rounded-xl border border-emerald-500/20 shrink-0">
+            ✅ Edições Liberadas
+          </span>
+        </div>
       ) : (
         <div className="p-4 rounded-2xl bg-zinc-900/60 border border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs shadow-sm">
           <div className="flex items-center gap-3">
@@ -362,7 +432,7 @@ export const MonthlyClosingTab: React.FC = () => {
               <CalendarCheck className="w-5 h-5" />
             </div>
             <div>
-              <strong className="text-white text-sm block">Abertura do Mês Pendente ({current.label})</strong>
+              <strong className="text-white text-sm block">Abertura de Mês ({selectedMonthLabel})</strong>
               <p className="text-zinc-400 mt-0.5">
                 Preencha o saldo inicial da conta bancária e confirme a abertura para definir este mês como o <strong>Mês Vigente</strong>.
               </p>
@@ -399,7 +469,7 @@ export const MonthlyClosingTab: React.FC = () => {
               <div className="flex items-center gap-2">
                 <Building2 className="w-4 h-4 text-emerald-400" />
                 <h3 className="text-sm font-bold text-white">
-                  Formulário de Abertura do Mês ({current.label})
+                  Formulário de Abertura do Mês ({selectedMonthLabel})
                 </h3>
               </div>
               {isVigente && (
@@ -414,7 +484,7 @@ export const MonthlyClosingTab: React.FC = () => {
               {/* 1. SALDO INICIAL */}
               <div className="space-y-1.5">
                 <label className="font-semibold text-zinc-200 block">
-                  Saldo com que {current.label} Inicia (R$):
+                  Saldo com que {selectedMonthLabel} Inicia (R$):
                 </label>
                 <div className="relative">
                   <input
@@ -434,7 +504,7 @@ export const MonthlyClosingTab: React.FC = () => {
                   </span>
                 </div>
                 <p className="text-[11px] text-zinc-400">
-                  💡 Este valor define o saldo inicial de <strong>{current.label}</strong>. Se for negativo (ex: -2000,00), ele entrará na linha de <strong>Cobertura Cheque Especial / Saldo Negativo Anterior</strong> do mês.
+                  💡 Este valor define o saldo inicial de <strong>{selectedMonthLabel}</strong>. Se for negativo (ex: -2000,00), ele entrará na linha de <strong>Cobertura Cheque Especial / Saldo Negativo Anterior</strong> do mês.
                 </p>
               </div>
 
@@ -518,7 +588,7 @@ export const MonthlyClosingTab: React.FC = () => {
                     className="w-full py-3 rounded-xl font-bold text-xs bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-zinc-950 transition shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2"
                   >
                     <Sparkles className="w-4 h-4 stroke-[2.5]" />
-                    <span>Definir {current.label} como Mês Vigente & Salvar Abertura</span>
+                    <span>Definir {selectedMonthLabel} como Mês Vigente & Salvar Abertura</span>
                   </button>
                 </div>
               )}
@@ -531,7 +601,7 @@ export const MonthlyClosingTab: React.FC = () => {
             <div className="flex items-center gap-2 border-b border-zinc-800/80 pb-3">
               <Calculator className="w-4 h-4 text-amber-400" />
               <h3 className="text-sm font-bold text-white">
-                Projeção de Dívida, Juros e IOF para o Mês ({current.label})
+                Projeção de Dívida, Juros e IOF para o Mês ({selectedMonthLabel})
               </h3>
             </div>
 
@@ -579,7 +649,7 @@ export const MonthlyClosingTab: React.FC = () => {
                       <span>Benefício Detectado: {overdraftFreeDays} Dias Grátis ({bankDisplayName})</span>
                     </div>
                     <p className="text-[11px] text-emerald-200/90 leading-relaxed">
-                      Se você cobrir esta conta em até <strong>{overdraftFreeDays} dias</strong> com as receitas de {current.label}, você economizará {formatBRL(projection.projectedInterest)} em juros!
+                      Se você cobrir esta conta em até <strong>{overdraftFreeDays} dias</strong> com as receitas de {selectedMonthLabel}, você economizará {formatBRL(projection.projectedInterest)} em juros!
                     </p>
                   </div>
                 ) : (
@@ -601,7 +671,7 @@ export const MonthlyClosingTab: React.FC = () => {
                   <span>Conta Iniciando no Azul!</span>
                 </div>
                 <p className="text-xs text-emerald-300/80">
-                  O mês de {current.label} inicia com saldo positivo de <strong>{formatBRL(parsedBankBalance)}</strong>. Não há cobrança de juros de cheque especial.
+                  O mês de {selectedMonthLabel} inicia com saldo positivo de <strong>{formatBRL(parsedBankBalance)}</strong>. Não há cobrança de juros de cheque especial.
                 </p>
               </div>
             )}
@@ -724,7 +794,7 @@ export const MonthlyClosingTab: React.FC = () => {
                 </div>
                 <div>
                   <h3 className="font-bold text-white text-sm">
-                    Reabrir Abertura de {current.label}
+                    Reabrir Abertura de {selectedMonthLabel}
                   </h3>
                   <span className="text-[11px] text-zinc-400">Auditoria & Ajustes</span>
                 </div>

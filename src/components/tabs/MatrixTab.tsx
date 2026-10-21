@@ -13,6 +13,7 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   Sparkles,
+  History,
 } from 'lucide-react';
 import { useFinance } from '../../context/FinanceContext';
 import {
@@ -35,7 +36,7 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
 
   const handleCellClick = (
     month: string,
-    targetTab: 'monthly' | 'cards' | 'variables',
+    targetTab: 'monthly' | 'cards' | 'variables' | 'closing',
     elementId?: string
   ) => {
     setSelectedMonth(month);
@@ -240,6 +241,40 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
                 })}
               </tr>
 
+              {/* Linha Fixa: Saldo Inicial / Abertura de Mês */}
+              <tr className="bg-zinc-900/60 font-semibold border-b border-zinc-800 text-xs">
+                <td className="sticky left-0 z-10 bg-zinc-900/90 py-2.5 px-4 text-zinc-300 flex items-center justify-between shadow-[2px_0_5px_rgba(0,0,0,0.5)]">
+                  <div className="flex items-center gap-2">
+                    <History className="w-3.5 h-3.5 text-zinc-400" />
+                    <span>SALDO INICIAL (ABERTURA DO MÊS)</span>
+                  </div>
+                  <span className="text-[10px] text-zinc-500 font-normal">Início</span>
+                </td>
+                {summaries.map((s) => {
+                  const isNeg = s.previousBalance < 0;
+                  return (
+                    <td
+                      key={s.month}
+                      onClick={() => handleCellClick(s.month, 'closing')}
+                      title={`Clique para ir para Abertura de Mês (${s.label})`}
+                      className={`py-2.5 px-3 text-right font-mono-numbers font-bold cursor-pointer transition ${
+                        isNeg
+                          ? 'text-rose-400 bg-rose-950/20 hover:bg-rose-900/30 font-extrabold'
+                          : s.previousBalance > 0
+                          ? 'text-emerald-400 hover:bg-emerald-500/10'
+                          : 'text-zinc-500 hover:bg-zinc-800/60'
+                      }`}
+                    >
+                      {isNeg
+                        ? `-${formatBRL(Math.abs(s.previousBalance))}`
+                        : s.previousBalance > 0
+                        ? `+${formatBRL(s.previousBalance)}`
+                        : 'R$ 0,00'}
+                    </td>
+                  );
+                })}
+              </tr>
+
               {/* 2. SEÇÃO: ENTRADAS */}
               <tr
                 onClick={() => toggleSection('incomes')}
@@ -278,20 +313,35 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
               {openSections.incomes && (
                 <>
                   {/* Linha de Saldo Mês Anterior */}
-                  <tr className="text-zinc-400 hover:bg-zinc-900/30">
+                  <tr className="text-zinc-300 hover:bg-zinc-900/30">
                     <td className="sticky left-0 z-10 bg-zinc-950 py-2 px-4 pl-9 text-zinc-300 font-medium shadow-[2px_0_5px_rgba(0,0,0,0.5)]">
-                      <span className="truncate block">
-                        (+) Saldo Disponível Mês Anterior
-                      </span>
+                      <div className="flex items-center justify-between">
+                        <span className="truncate block font-medium">
+                          (+) Saldo Disponível Mês Anterior
+                        </span>
+                        <span className="text-[9px] px-1 rounded bg-zinc-800 text-zinc-400">
+                          Início
+                        </span>
+                      </div>
                     </td>
                     {summaries.map((s) => (
                       <td
                         key={s.month}
-                        onClick={() => handleCellClick(s.month, 'monthly')}
-                        title={`Clique para ir para Previsão & Controle (${s.label})`}
-                        className="py-2 px-3 text-right font-mono-numbers text-zinc-400 cursor-pointer hover:bg-zinc-800/60 transition"
+                        onClick={() => handleCellClick(s.month, 'closing')}
+                        title={`Clique para ir para Abertura de Mês (${s.label})`}
+                        className={`py-2 px-3 text-right font-mono-numbers cursor-pointer transition ${
+                          s.previousBalance < 0
+                            ? 'text-rose-400 font-extrabold bg-rose-950/30 hover:bg-rose-900/40'
+                            : s.previousBalance > 0
+                            ? 'text-emerald-400 hover:bg-emerald-500/10'
+                            : 'text-zinc-500 hover:bg-zinc-800/60'
+                        }`}
                       >
-                        {s.previousBalance > 0 ? formatBRL(s.previousBalance) : 'R$ 0,00'}
+                        {s.previousBalance < 0
+                          ? `-${formatBRL(Math.abs(s.previousBalance))}`
+                          : s.previousBalance > 0
+                          ? `+${formatBRL(s.previousBalance)}`
+                          : 'R$ 0,00'}
                       </td>
                     ))}
                   </tr>
@@ -379,30 +429,37 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
                 ))}
               </tr>
 
+              {/* Linha Automática de Cheque Especial (Juros e IOF Provisionados) */}
+              <tr className="bg-rose-950/25 text-rose-300 hover:bg-rose-950/40 border-b border-rose-950/60">
+                <td className="sticky left-0 z-10 bg-zinc-950 py-2.5 px-4 pl-6 text-rose-400 font-semibold shadow-[2px_0_5px_rgba(0,0,0,0.5)]">
+                  <div className="flex items-center justify-between">
+                    <span className="truncate block font-bold text-xs flex items-center gap-1.5">
+                      <span>(⚠️) Projeção de Juros & IOF (Cheque Especial)</span>
+                    </span>
+                    <span className="text-[9px] px-1.5 py-0.2 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                      Encargos
+                    </span>
+                  </div>
+                </td>
+                {summaries.map((s) => (
+                  <td
+                    key={s.month}
+                    onClick={() => handleCellClick(s.month, 'closing')}
+                    title={`Clique para ir para Abertura de Mês (${s.label})`}
+                    className={`py-2.5 px-3 text-right font-mono-numbers cursor-pointer transition ${
+                      s.overdraftCover > 0
+                        ? 'text-rose-400 font-bold bg-rose-950/40 hover:bg-rose-900/60'
+                        : 'text-zinc-500 hover:bg-zinc-800/60'
+                    }`}
+                  >
+                    {s.overdraftCover > 0 ? formatBRL(s.overdraftCover) : '-'}
+                  </td>
+                ))}
+              </tr>
+
               {/* Submenus da Despesa Total */}
               {openSections.allExpenses && (
                 <>
-                  {/* Linha Automática de Cheque Especial / Saldo Negativo Anterior */}
-                  <tr className="bg-rose-950/20 text-rose-300 hover:bg-rose-950/30">
-                    <td className="sticky left-0 z-10 bg-zinc-950 py-2.5 px-4 pl-8 text-rose-400 font-semibold shadow-[2px_0_5px_rgba(0,0,0,0.5)]">
-                      <span className="truncate block font-bold">
-                        (⚠️) Cobertura Cheque Especial / Saldo Negativo Anterior
-                      </span>
-                    </td>
-                    {summaries.map((s) => (
-                      <td
-                        key={s.month}
-                        onClick={() => handleCellClick(s.month, 'monthly')}
-                        title={`Clique para ir para Abertura de Mês (${s.label})`}
-                        className={`py-2.5 px-3 text-right font-mono-numbers cursor-pointer transition ${
-                          s.overdraftCover > 0 ? 'text-rose-400 font-bold hover:bg-rose-900/40' : 'text-zinc-400 hover:bg-zinc-800/60'
-                        }`}
-                      >
-                        {s.overdraftCover > 0 ? formatBRL(s.overdraftCover) : '-'}
-                      </td>
-                    ))}
-                  </tr>
-
                   {/* SEÇÃO: CATEGORIAS & ENVELOPES DE DESPESAS (CONSOLIDADO) */}
                   <tr
                     onClick={() => toggleSection('envelopes')}

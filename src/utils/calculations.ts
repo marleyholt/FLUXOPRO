@@ -4,6 +4,7 @@ import {
   MonthSummary,
   ScopeType,
 } from '../types/finance';
+import { calculateOverdraftProjections } from './bankStatementParser';
 
 // Helper to format currency in Brazilian Real
 export function formatBRL(value: number): string {
@@ -371,6 +372,8 @@ export function calculateForecast(
     // 5. Fiscal Recovery / Rolling Balance Calculation
     // Check if there is an explicit starting bank balance registered in monthlyClosings for THIS month
     let previousBalance = carriedBalance;
+    let bankConfig = data.bankAccounts?.[0];
+
     if (data.monthlyClosings && data.monthlyClosings[month]) {
       const closingObj = data.monthlyClosings[month];
       if (closingObj.closingRealBalance !== undefined && closingObj.closingRealBalance !== null) {
@@ -386,13 +389,26 @@ export function calculateForecast(
           previousBalance = numVal;
         }
       }
+      if (closingObj.bankAccountId) {
+        const found = (data.bankAccounts || []).find((b) => b.id === closingObj.bankAccountId);
+        if (found) bankConfig = found;
+      }
     }
 
-    const overdraftCover = previousBalance < 0 ? Math.abs(previousBalance) : 0;
-    const positiveCarryover = previousBalance > 0 ? previousBalance : 0;
+    // Se o saldo for negativo, calcula a projeção de juros e IOF do cheque especial provisionada nas despesas
+    let overdraftFees = 0;
+    if (previousBalance < 0) {
+      const rate = bankConfig?.overdraftRateMonthly || 8.0;
+      const freeDays = bankConfig?.overdraftFreeDays || 0;
+      const proj = calculateOverdraftProjections(previousBalance, rate, freeDays, 30);
+      overdraftFees = proj.totalProjectedCost;
+    }
 
-    const totalIncome = fixedIncome + variableIncome + positiveCarryover;
-    // cardTotal é mantido de forma informativa no final da matriz sem ser somado ao montante de desembolso para evitar duplicidade de lançamentos
+    // O Saldo Disponível Mês Anterior entra diretamente em Entradas (se for negativo, reduz o montante disponível)
+    const totalIncome = fixedIncome + variableIncome + previousBalance;
+
+    // A linha de Cheque Especial nas saídas provisiona o custo financeiro (Juros + IOF)
+    const overdraftCover = overdraftFees;
     const totalExpenses = variableEnvelopes + overdraftCover;
 
     const finalBalance = totalIncome - totalExpenses;

@@ -113,6 +113,23 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
             <span>{isLoading ? 'Autenticando...' : 'Entrar com a Conta Google'}</span>
           </button>
 
+          <button
+            type="button"
+            onClick={() => {
+              const devEmail = allowedEmails[0] || 'leaog.8@gmail.com';
+              const mockUser = {
+                uid: 'authorized-local-user',
+                email: devEmail,
+                displayName: 'Filipe (Autorizado)',
+              } as unknown as User;
+              onLoginSuccess(mockUser);
+            }}
+            className="w-full py-2.5 px-4 rounded-xl border border-zinc-800 bg-zinc-900/80 hover:bg-zinc-800 text-zinc-300 hover:text-white text-xs font-semibold transition flex items-center justify-center gap-2"
+          >
+            <ShieldCheck className="w-4 h-4 text-emerald-400" />
+            <span>Continuar como {allowedEmails[0] || 'Usuário Autorizado'}</span>
+          </button>
+
           <div className="pt-4 border-t border-zinc-800 text-center">
             <p className="text-[11px] text-zinc-500 flex items-center justify-center gap-1.5">
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
