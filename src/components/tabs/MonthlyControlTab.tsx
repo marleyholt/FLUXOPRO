@@ -438,6 +438,7 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
                 filteredChecklist.map((item) => (
                   <div
                     key={item.id}
+                    id={`expense-${item.id}`}
                     className={`p-3 rounded-xl border transition flex items-center justify-between gap-3 ${
                       item.isPaid
                         ? 'bg-zinc-950/40 border-zinc-800/50 opacity-60'
@@ -628,6 +629,7 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
                 return (
                   <div
                     key={env.id}
+                    id={`envelope-${env.id}`}
                     className="p-4 rounded-xl bg-zinc-950/80 border border-zinc-800 space-y-3 shadow-sm transition-all"
                   >
                     {/* Envelope Header */}

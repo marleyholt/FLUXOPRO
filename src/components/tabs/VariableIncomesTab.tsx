@@ -321,6 +321,7 @@ export const VariableIncomesTab: React.FC<VariableIncomesTabProps> = ({
                 {allIncomes.map((inc) => (
                   <div
                     key={inc.id}
+                    id={`income-${inc.id}`}
                     className="p-3.5 rounded-xl bg-zinc-950 border border-zinc-800 flex items-center justify-between gap-4 text-xs transition hover:border-zinc-700"
                   >
                     <div className="space-y-1">

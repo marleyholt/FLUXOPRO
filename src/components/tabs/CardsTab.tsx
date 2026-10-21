@@ -15,6 +15,10 @@ import {
   Clock,
   X,
   Check,
+  Search,
+  CheckSquare,
+  Square,
+  Tag,
 } from 'lucide-react';
 import { useFinance } from '../../context/FinanceContext';
 import {
@@ -64,6 +68,11 @@ export const CardsTab: React.FC<CardsTabProps> = ({
   const [editType, setEditType] = useState<'recurring' | 'installment' | 'single'>('installment');
   const [editRemainingInstallments, setEditRemainingInstallments] = useState('1');
 
+  // Seleção e Classificação em Lote
+  const [selectedTxIds, setSelectedTxIds] = useState<Set<string>>(new Set());
+  const [searchQuery, setSearchQuery] = useState('');
+  const [bulkCategory, setBulkCategory] = useState('');
+
   const current = currentMonthSummary || summaries[0];
   const activeCard =
     data.creditCards.find((c) => c.id === selectedCardId) || data.creditCards[0];
@@ -102,6 +111,69 @@ export const CardsTab: React.FC<CardsTabProps> = ({
     if (filterType === 'REVIEW') return tx.needsReview;
     return true;
   });
+
+  // Filter transactions by search query (ex: "Uber", "iFood", "Farmacia")
+  const searchedTransactions = filteredTransactions.filter((tx) => {
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase().trim();
+    return (
+      tx.description.toLowerCase().includes(q) ||
+      tx.category.toLowerCase().includes(q) ||
+      (tx.notes && tx.notes.toLowerCase().includes(q))
+    );
+  });
+
+  const toggleSelectTx = (id: string) => {
+    setSelectedTxIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const handleSelectAllSearched = () => {
+    if (selectedTxIds.size >= searchedTransactions.length && searchedTransactions.length > 0) {
+      setSelectedTxIds(new Set());
+    } else {
+      setSelectedTxIds(new Set(searchedTransactions.map((t) => t.id)));
+    }
+  };
+
+  const handleApplyBulkCategory = () => {
+    if (selectedTxIds.size === 0) return;
+    const catToApply = bulkCategory || availableCategories[0] || 'Outros';
+    monthTransactions.forEach((tx) => {
+      if (selectedTxIds.has(tx.id)) {
+        updateCardTransaction({
+          ...tx,
+          category: catToApply,
+        });
+      }
+    });
+    setSelectedTxIds(new Set());
+  };
+
+  const handleApplyBulkReviewToggle = () => {
+    if (selectedTxIds.size === 0) return;
+    monthTransactions.forEach((tx) => {
+      if (selectedTxIds.has(tx.id)) {
+        updateCardTransaction({
+          ...tx,
+          needsReview: !tx.needsReview,
+        });
+      }
+    });
+    setSelectedTxIds(new Set());
+  };
+
+  const handleApplyBulkDelete = () => {
+    if (selectedTxIds.size === 0) return;
+    selectedTxIds.forEach((id) => {
+      deleteCardTransaction(id);
+    });
+    setSelectedTxIds(new Set());
+  };
 
   // Calculate numbers for active card in selected month
   let detailedSumThisMonth = 0;
@@ -234,7 +306,7 @@ export const CardsTab: React.FC<CardsTabProps> = ({
       </div>
 
       {/* Active Card Invoice Summary Banner */}
-      <div className="p-5 rounded-2xl bg-zinc-900/90 border border-zinc-800 shadow-md">
+      <div id={`card-${activeCard.id}`} className="p-5 rounded-2xl bg-zinc-900/90 border border-zinc-800 shadow-md">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           {/* Card Info */}
           <div className="flex items-center gap-3">
@@ -435,14 +507,127 @@ export const CardsTab: React.FC<CardsTabProps> = ({
         </button>
       </div>
 
+      {/* Search and Bulk Selection Header Bar */}
+      <div className="p-3.5 rounded-xl bg-zinc-900/80 border border-zinc-800 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
+        {/* Search Input */}
+        <div className="flex-1 relative">
+          <Search className="w-4 h-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <input
+            type="text"
+            placeholder="Filtrar lançamentos da fatura por nome (ex: Uber, iFood, Mercado)..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-9 pr-8 py-2 rounded-lg bg-zinc-950 border border-zinc-800 text-xs text-white placeholder-zinc-500 outline-none focus:border-emerald-500 transition"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-white text-xs font-bold"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+
+        {/* Select All / Deselect All Button */}
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={handleSelectAllSearched}
+            disabled={searchedTransactions.length === 0}
+            className="px-3.5 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-semibold transition flex items-center gap-2 disabled:opacity-50"
+          >
+            {selectedTxIds.size >= searchedTransactions.length && searchedTransactions.length > 0 ? (
+              <>
+                <CheckSquare className="w-4 h-4 text-emerald-400" />
+                <span>Desmarcar Todos ({searchedTransactions.length})</span>
+              </>
+            ) : (
+              <>
+                <Square className="w-4 h-4 text-zinc-400" />
+                <span>Selecionar Todos ({searchedTransactions.length})</span>
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* Floating Sticky Bulk Actions Bar */}
+      {selectedTxIds.size > 0 && (
+        <div className="sticky top-20 z-20 p-4 rounded-2xl bg-zinc-900 border-2 border-emerald-500/80 shadow-2xl backdrop-blur-md flex flex-col lg:flex-row lg:items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2">
+          <div className="flex items-center gap-3">
+            <span className="w-8 h-8 rounded-xl bg-emerald-500 text-zinc-950 font-extrabold text-sm flex items-center justify-center shrink-0 shadow-lg shadow-emerald-500/30">
+              {selectedTxIds.size}
+            </span>
+            <div>
+              <span className="font-bold text-white text-xs block">
+                {selectedTxIds.size} lançamento(s) selecionado(s)
+              </span>
+              <span className="text-[11px] text-zinc-400">
+                Selecione a categoria desejada e clique em <strong>Classificar em Lote</strong> para alterar todos simultaneamente:
+              </span>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-1.5 bg-zinc-950 border border-zinc-700 rounded-lg p-1">
+              <Tag className="w-3.5 h-3.5 text-emerald-400 ml-1.5 shrink-0" />
+              <select
+                value={bulkCategory || availableCategories[0]}
+                onChange={(e) => setBulkCategory(e.target.value)}
+                className="bg-transparent text-xs text-white outline-none pr-2 font-medium"
+              >
+                {availableCategories.map((cat) => (
+                  <option key={cat} value={cat} className="bg-zinc-950 text-white">
+                    {cat}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <button
+              onClick={handleApplyBulkCategory}
+              className="px-3.5 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-zinc-950 text-xs font-bold transition flex items-center gap-1.5 shadow-md shadow-emerald-500/20"
+            >
+              <Check className="w-4 h-4 stroke-[3]" />
+              <span>Classificar em Lote</span>
+            </button>
+
+            <button
+              onClick={handleApplyBulkReviewToggle}
+              className="px-3 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-amber-300 text-xs font-semibold transition"
+              title="Alternar marcação '⚠️ Verificar' para os selecionados"
+            >
+              ⚠️ Alternar Verificar
+            </button>
+
+            <button
+              onClick={handleApplyBulkDelete}
+              className="px-2.5 py-2 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 text-xs font-semibold transition border border-rose-500/30 flex items-center gap-1"
+              title="Excluir selecionados"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Excluir</span>
+            </button>
+
+            <button
+              onClick={() => setSelectedTxIds(new Set())}
+              className="p-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white transition"
+              title="Cancelar Seleção em Lote"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Transactions List */}
       <div className="space-y-3">
-        {filteredTransactions.length === 0 ? (
+        {searchedTransactions.length === 0 ? (
           <div className="p-8 text-center text-xs text-zinc-400 rounded-2xl bg-zinc-900/40 border border-zinc-800">
             Nenhum lançamento encontrado na fatura de <strong>{current.label} ({selectedMonth})</strong> para este filtro.
           </div>
         ) : (
-          filteredTransactions.map((tx) => {
+          searchedTransactions.map((tx) => {
             const isRecurring = tx.type === 'recurring';
             const isInstallment = tx.type === 'installment';
             const instInfo = isInstallment
@@ -460,18 +645,30 @@ export const CardsTab: React.FC<CardsTabProps> = ({
               : 0;
             const remainingBalance = remainingInstallments * tx.installmentAmount;
 
+            const isSelected = selectedTxIds.has(tx.id);
+
             return (
               <div
                 key={tx.id}
                 className={`p-4 rounded-xl border transition flex flex-col md:flex-row md:items-center justify-between gap-4 ${
-                  tx.needsReview
+                  isSelected
+                    ? 'bg-emerald-950/20 border-emerald-500/60 shadow-lg shadow-emerald-500/5'
+                    : tx.needsReview
                     ? 'bg-amber-950/10 border-amber-500/30'
                     : 'bg-zinc-900/80 border-zinc-800 hover:border-zinc-700'
                 }`}
               >
-                {/* Left Description & Info */}
+                {/* Left Description, Checkbox & Info */}
                 <div className="space-y-1.5 flex-1 min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    {/* Checkbox */}
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => toggleSelectTx(tx.id)}
+                      className="w-4 h-4 rounded border-zinc-700 bg-zinc-950 text-emerald-500 focus:ring-emerald-500 focus:ring-offset-zinc-900 cursor-pointer shrink-0"
+                    />
+
                     <span className="font-bold text-zinc-100 text-sm truncate">
                       {tx.description}
                     </span>

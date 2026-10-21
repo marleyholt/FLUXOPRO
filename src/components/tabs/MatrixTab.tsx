@@ -31,7 +31,29 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
   onOpenNewTransaction,
   onOpenCsvImport,
 }) => {
-  const { data, summaries, scopeFilter, selectedMonth, setSelectedMonth } = useFinance();
+  const { data, summaries, scopeFilter, selectedMonth, setSelectedMonth, setActiveTab } = useFinance();
+
+  const handleCellClick = (
+    month: string,
+    targetTab: 'monthly' | 'cards' | 'variables',
+    elementId?: string
+  ) => {
+    setSelectedMonth(month);
+    setActiveTab(targetTab);
+
+    if (elementId) {
+      setTimeout(() => {
+        const el = document.getElementById(elementId);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          el.classList.add('ring-2', 'ring-emerald-400', 'ring-offset-2', 'ring-offset-zinc-950');
+          setTimeout(() => {
+            el.classList.remove('ring-2', 'ring-emerald-400', 'ring-offset-2', 'ring-offset-zinc-950');
+          }, 3000);
+        }
+      }, 120);
+    }
+  };
 
   // Accordion state
   const [openSections, setOpenSections] = useState({
@@ -198,7 +220,9 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
                   return (
                     <td
                       key={s.month}
-                      className={`py-3 px-3 text-right font-mono-numbers font-extrabold ${
+                      onClick={() => handleCellClick(s.month, 'monthly')}
+                      title={`Clique para ir para Previsão & Controle (${s.label})`}
+                      className={`py-3 px-3 text-right font-mono-numbers font-extrabold cursor-pointer transition hover:bg-emerald-500/20 ${
                         isSelected ? 'bg-emerald-500/10' : ''
                       } ${s.finalBalance >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}
                     >
@@ -230,7 +254,12 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
                 {summaries.map((s) => (
                   <td
                     key={s.month}
-                    className="py-2.5 px-3 text-right font-mono-numbers font-bold text-emerald-400 bg-zinc-900/40"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleCellClick(s.month, 'variables');
+                    }}
+                    title={`Clique para ir para Receitas (${s.label})`}
+                    className="py-2.5 px-3 text-right font-mono-numbers font-bold text-emerald-400 bg-zinc-900/40 cursor-pointer hover:bg-emerald-500/20 transition"
                   >
                     {formatBRL(s.totalIncome)}
                   </td>
@@ -250,7 +279,9 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
                     {summaries.map((s) => (
                       <td
                         key={s.month}
-                        className="py-2 px-3 text-right font-mono-numbers text-zinc-400"
+                        onClick={() => handleCellClick(s.month, 'monthly')}
+                        title={`Clique para ir para Previsão & Controle (${s.label})`}
+                        className="py-2 px-3 text-right font-mono-numbers text-zinc-400 cursor-pointer hover:bg-zinc-800/60 transition"
                       >
                         {s.previousBalance > 0 ? formatBRL(s.previousBalance) : 'R$ 0,00'}
                       </td>
@@ -282,6 +313,8 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
                         return (
                           <td
                             key={s.month}
+                            onClick={() => handleCellClick(s.month, 'variables', `income-${inc.id}`)}
+                            title={`Clique para ir até "${inc.title}" em Receitas (${s.label})`}
                             onMouseEnter={() => {
                               setHoveredRow(inc.id);
                               setHoveredCol(s.month);
@@ -290,7 +323,7 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
                               setHoveredRow(null);
                               setHoveredCol(null);
                             }}
-                            className={`py-2 px-3 text-right font-mono-numbers transition ${getCellHoverClass(
+                            className={`py-2 px-3 text-right font-mono-numbers cursor-pointer transition ${getCellHoverClass(
                               inc.id,
                               s.month
                             )} ${amount > 0 ? 'text-zinc-200' : 'text-zinc-400'}`}
@@ -326,7 +359,12 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
                 {summaries.map((s) => (
                   <td
                     key={s.month}
-                    className="py-3 px-3 text-right font-mono-numbers font-extrabold text-rose-400 text-sm bg-rose-950/20"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleCellClick(s.month, 'monthly');
+                    }}
+                    title={`Clique para ir para Previsão & Controle (${s.label})`}
+                    className="py-3 px-3 text-right font-mono-numbers font-extrabold text-rose-400 text-sm bg-rose-950/20 cursor-pointer hover:bg-rose-900/40 transition"
                   >
                     {formatBRL(s.totalExpenses)}
                   </td>
@@ -360,7 +398,12 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
                         {summaries.map((s) => (
                           <td
                             key={s.month}
-                            className="py-2.5 px-3 text-right font-mono-numbers font-semibold text-rose-300 bg-zinc-900/30"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleCellClick(s.month, 'monthly');
+                            }}
+                            title={`Clique para ir para Previsão & Controle (${s.label})`}
+                            className="py-2.5 px-3 text-right font-mono-numbers font-semibold text-rose-300 bg-zinc-900/30 cursor-pointer hover:bg-indigo-950/40 transition"
                           >
                             {formatBRL(s.pjExpenses)}
                           </td>
@@ -376,7 +419,20 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
                         {summaries.map((s) => (
                           <td
                             key={s.month}
-                            className="py-2 px-3 text-right font-mono-numbers text-zinc-300"
+                            onClick={() => handleCellClick(s.month, 'monthly', `expense-${exp.id}`)}
+                            title={`Clique para destacar "${exp.title}" em Previsão & Controle (${s.label})`}
+                            onMouseEnter={() => {
+                              setHoveredRow(exp.id);
+                              setHoveredCol(s.month);
+                            }}
+                            onMouseLeave={() => {
+                              setHoveredRow(null);
+                              setHoveredCol(null);
+                            }}
+                            className={`py-2 px-3 text-right font-mono-numbers cursor-pointer transition ${getCellHoverClass(
+                              exp.id,
+                              s.month
+                            )} text-zinc-300`}
                           >
                             {formatBRL(exp.amount)}
                           </td>
@@ -410,7 +466,12 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
                     {summaries.map((s) => (
                       <td
                         key={s.month}
-                        className="py-2.5 px-3 text-right font-mono-numbers font-bold text-rose-400 bg-zinc-900/40"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleCellClick(s.month, 'monthly');
+                        }}
+                        title={`Clique para ir para Previsão & Controle (${s.label})`}
+                        className="py-2.5 px-3 text-right font-mono-numbers font-bold text-rose-400 bg-zinc-900/40 cursor-pointer hover:bg-rose-950/40 transition"
                       >
                         {formatBRL(s.pfFixedExpenses + s.overdraftCover)}
                       </td>
@@ -429,8 +490,10 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
                         {summaries.map((s) => (
                           <td
                             key={s.month}
-                            className={`py-2 px-3 text-right font-mono-numbers ${
-                              s.overdraftCover > 0 ? 'text-rose-400 font-bold' : 'text-zinc-400'
+                            onClick={() => handleCellClick(s.month, 'monthly')}
+                            title={`Clique para ir para Previsão & Controle (${s.label})`}
+                            className={`py-2 px-3 text-right font-mono-numbers cursor-pointer transition ${
+                              s.overdraftCover > 0 ? 'text-rose-400 font-bold hover:bg-rose-900/40' : 'text-zinc-400 hover:bg-zinc-800/60'
                             }`}
                           >
                             {s.overdraftCover > 0 ? formatBRL(s.overdraftCover) : '-'}
@@ -482,6 +545,8 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
                             return (
                               <td
                                 key={s.month}
+                                onClick={() => handleCellClick(s.month, 'monthly', `expense-${exp.id}`)}
+                                title={`Clique para destacar "${exp.title}" em Previsão & Controle (${s.label})`}
                                 onMouseEnter={() => {
                                   setHoveredRow(exp.id);
                                   setHoveredCol(s.month);
@@ -490,7 +555,7 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
                                   setHoveredRow(null);
                                   setHoveredCol(null);
                                 }}
-                                className={`py-2 px-3 text-right font-mono-numbers transition ${getCellHoverClass(
+                                className={`py-2 px-3 text-right font-mono-numbers cursor-pointer transition ${getCellHoverClass(
                                   exp.id,
                                   s.month
                                 )} ${amount > 0 ? 'text-zinc-200' : 'text-zinc-400'}`}
@@ -541,7 +606,12 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
                     {summaries.map((s) => (
                       <td
                         key={s.month}
-                        className="py-2.5 px-3 text-right font-mono-numbers font-bold text-amber-400 bg-zinc-900/40"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleCellClick(s.month, 'monthly');
+                        }}
+                        title={`Clique para ir para Previsão & Controle (${s.label})`}
+                        className="py-2.5 px-3 text-right font-mono-numbers font-bold text-amber-400 bg-zinc-900/40 cursor-pointer hover:bg-amber-500/20 transition"
                       >
                         {formatBRL(s.variableEnvelopes)}
                       </td>
@@ -570,6 +640,8 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
                           return (
                             <td
                               key={s.month}
+                              onClick={() => handleCellClick(s.month, 'monthly', `envelope-${env.id}`)}
+                              title={`Clique para destacar a categoria "${env.name}" em Previsão & Controle (${s.label})`}
                               onMouseEnter={() => {
                                 setHoveredRow(env.id);
                                 setHoveredCol(s.month);
@@ -578,7 +650,7 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
                                 setHoveredRow(null);
                                 setHoveredCol(null);
                               }}
-                              className={`py-2 px-3 text-right font-mono-numbers transition ${getCellHoverClass(
+                              className={`py-2 px-3 text-right font-mono-numbers cursor-pointer transition ${getCellHoverClass(
                                 env.id,
                                 s.month
                               )} ${isOverflow ? 'text-rose-400 font-bold' : 'text-zinc-300'}`}
@@ -619,7 +691,12 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
                 {summaries.map((s) => (
                   <td
                     key={s.month}
-                    className="py-2.5 px-3 text-right font-mono-numbers font-bold text-white bg-zinc-900/40"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleCellClick(s.month, 'cards');
+                    }}
+                    title={`Clique para abrir Central de Cartões em ${s.label}`}
+                    className="py-2.5 px-3 text-right font-mono-numbers font-bold text-white bg-zinc-900/40 cursor-pointer hover:bg-indigo-950/40 transition"
                   >
                     {formatBRL(s.cardTotal)}
                   </td>
@@ -650,6 +727,8 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
                       return (
                         <td
                           key={s.month}
+                          onClick={() => handleCellClick(s.month, 'cards', `card-${card.id}`)}
+                          title={`Clique para ir até o cartão "${card.name}" em ${s.label}`}
                           onMouseEnter={() => {
                             setHoveredRow(card.id);
                             setHoveredCol(s.month);
@@ -658,7 +737,7 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
                             setHoveredRow(null);
                             setHoveredCol(null);
                           }}
-                          className={`py-2 px-3 text-right font-mono-numbers transition ${getCellHoverClass(
+                          className={`py-2 px-3 text-right font-mono-numbers cursor-pointer transition ${getCellHoverClass(
                             card.id,
                             s.month
                           )} text-zinc-200`}
