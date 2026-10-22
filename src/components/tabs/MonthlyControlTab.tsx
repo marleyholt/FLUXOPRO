@@ -1818,39 +1818,69 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
                 />
               </div>
 
-              <div className="space-y-1">
-                <label className="text-xs font-medium text-zinc-300">Encerrar projeção em:</label>
-                <select
-                  value={editingSubItem.subItem.endMonth || ''}
-                  onChange={(e) =>
-                    setEditingSubItem({
-                      ...editingSubItem,
-                      subItem: { ...editingSubItem.subItem, endMonth: e.target.value || undefined },
-                    })
-                  }
-                  className="w-full px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-700 text-xs text-white outline-none focus:border-emerald-500 font-mono-numbers font-bold"
-                >
-                  <option value="">(Sem encerramento - Recorrente eterno)</option>
-                  {(() => {
-                    const months: { value: string; label: string }[] = [];
-                    const baseDate = new Date();
-                    baseDate.setMonth(baseDate.getMonth() - 12);
-                    for (let i = 0; i < 48; i++) {
-                      const y = baseDate.getFullYear();
-                      const m = String(baseDate.getMonth() + 1).padStart(2, '0');
-                      const val = `${y}-${m}`;
-                      months.push({ value: val, label: getMonthLabel(val) });
-                      baseDate.setMonth(baseDate.getMonth() + 1);
-                    }
-                    return months.map((m) => (
-                      <option key={m.value} value={m.value}>
-                        {m.label} ({m.value})
-                      </option>
-                    ));
-                  })()}
-                </select>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-zinc-300">Encerrar projeção em (Mês / Ano):</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <select
+                    value={editingSubItem.subItem.endMonth ? editingSubItem.subItem.endMonth.split('-')[1] || '' : ''}
+                    onChange={(e) => {
+                      const m = e.target.value;
+                      const currentYearPart = editingSubItem.subItem.endMonth ? editingSubItem.subItem.endMonth.split('-')[0] : String(new Date().getFullYear());
+                      const newEnd = m && currentYearPart ? `${currentYearPart}-${m}` : undefined;
+                      setEditingSubItem({
+                        ...editingSubItem,
+                        subItem: { ...editingSubItem.subItem, endMonth: newEnd },
+                      });
+                    }}
+                    className="px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-700 text-xs text-white outline-none focus:border-emerald-500 font-mono-numbers font-bold"
+                  >
+                    <option value="">Mês</option>
+                    {[
+                      { value: '01', label: 'Janeiro (01)' },
+                      { value: '02', label: 'Fevereiro (02)' },
+                      { value: '03', label: 'Março (03)' },
+                      { value: '04', label: 'Abril (04)' },
+                      { value: '05', label: 'Maio (05)' },
+                      { value: '06', label: 'Junho (06)' },
+                      { value: '07', label: 'Julho (07)' },
+                      { value: '08', label: 'Agosto (08)' },
+                      { value: '09', label: 'Setembro (09)' },
+                      { value: '10', label: 'Outubro (10)' },
+                      { value: '11', label: 'Novembro (11)' },
+                      { value: '12', label: 'Dezembro (12)' },
+                    ].map((m) => (
+                      <option key={m.value} value={m.value}>{m.label}</option>
+                    ))}
+                  </select>
+
+                  <select
+                    value={editingSubItem.subItem.endMonth ? editingSubItem.subItem.endMonth.split('-')[0] || '' : ''}
+                    onChange={(e) => {
+                      const y = e.target.value;
+                      const currentMonthPart = editingSubItem.subItem.endMonth ? editingSubItem.subItem.endMonth.split('-')[1] : '12';
+                      const newEnd = y && currentMonthPart ? `${y}-${currentMonthPart}` : y ? `${y}-12` : undefined;
+                      setEditingSubItem({
+                        ...editingSubItem,
+                        subItem: { ...editingSubItem.subItem, endMonth: newEnd },
+                      });
+                    }}
+                    className="px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-700 text-xs text-white outline-none focus:border-emerald-500 font-mono-numbers font-bold"
+                  >
+                    <option value="">Ano (Eterno)</option>
+                    {(() => {
+                      const currentYear = new Date().getFullYear();
+                      const years: number[] = [];
+                      for (let y = currentYear; y <= currentYear + 35; y++) {
+                        years.push(y);
+                      }
+                      return years.map((y) => (
+                        <option key={y} value={y}>{y}</option>
+                      ));
+                    })()}
+                  </select>
+                </div>
                 <span className="text-[10px] text-zinc-400 block">
-                  Selecione o último mês em que esta projeção ocorre (opcional). Após este mês, a projeção cessa.
+                  Defina o mês e o ano limite para o término de financiamentos e empréstimos de longo prazo (ex: até 35 anos).
                 </span>
               </div>
 

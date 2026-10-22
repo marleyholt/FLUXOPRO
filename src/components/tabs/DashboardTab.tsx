@@ -66,6 +66,8 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
   } = useFinance();
 
   const [chartViewMode, setChartViewMode] = useState<'composed' | 'area' | 'balance'>('composed');
+  const [extraAmortizationPushed, setExtraAmortizationPushed] = useState<number>(0);
+  const [extraAmortizationFuture, setExtraAmortizationFuture] = useState<number>(0);
 
   // Generate available months for rolling forecast start month selector
   const availableMonths: { value: string; label: string }[] = [];
@@ -939,6 +941,92 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
           </span>
         </div>
 
+        {/* Gráfico de Redução de Saldo Devedor & Simulador de Amortização Extra (Postergadas) */}
+        {activePushedDebts.length > 0 && (
+          <div className="p-4 rounded-xl bg-zinc-950/80 border border-zinc-800 space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <span className="text-xs font-bold text-white block">Evolução e Comparativo de Amortização (Próximos 12 Meses)</span>
+                <span className="text-[11px] text-zinc-400">Compare o cenário atual com pagamentos extras mensais para acelerar a quitação.</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="text-[11px] text-zinc-300 font-medium">Amortização Extra Mensal (R$):</label>
+                <input
+                  type="number"
+                  step="100"
+                  min="0"
+                  value={extraAmortizationPushed}
+                  onChange={(e) => setExtraAmortizationPushed(parseFloat(e.target.value) || 0)}
+                  className="w-28 px-2.5 py-1 rounded-lg bg-zinc-900 border border-zinc-700 text-xs text-white font-mono-numbers outline-none focus:border-amber-500 font-bold"
+                />
+              </div>
+            </div>
+
+            <div className="h-56 w-full pt-1">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart
+                  data={Array.from({ length: 12 }, (_, i) => {
+                    const targetM = addMonths(selectedMonth, i);
+                    const label = getMonthLabel(targetM);
+                    let baseline = 0;
+                    activePushedDebts.forEach((p) => {
+                      if (getMonthDiff(targetM, p.targetMonth) >= 0) {
+                        const rate = p.interestRate || 0;
+                        const intType = p.interestType || 'monthly';
+                        const monthsDiff = Math.max(1, getMonthDiff(p.month, p.targetMonth));
+                        const daysDiff = monthsDiff * 30;
+                        const projectedInterest = rate > 0
+                          ? intType === 'monthly'
+                            ? p.amount * (rate / 100) * monthsDiff
+                            : p.amount * (rate / 100) * daysDiff
+                          : 0;
+                        baseline += p.amount + projectedInterest;
+                      }
+                    });
+                    const withExtra = Math.max(0, baseline - extraAmortizationPushed * i);
+                    return {
+                      month: label,
+                      CenarioAtual: baseline,
+                      ComAmortizacaoExtra: withExtra,
+                    };
+                  })}
+                  margin={{ top: 10, right: 10, left: -15, bottom: 0 }}
+                >
+                  <defs>
+                    <linearGradient id="colorBaselinePushed" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.4} />
+                      <stop offset="95%" stopColor="#f59e0b" stopOpacity={0.0} />
+                    </linearGradient>
+                    <linearGradient id="colorExtraPushed" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.4} />
+                      <stop offset="95%" stopColor="#10b981" stopOpacity={0.0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
+                  <XAxis dataKey="month" stroke="#71717a" fontSize={10} tickLine={false} />
+                  <YAxis stroke="#71717a" fontSize={10} tickLine={false} tickFormatter={(v) => formatCompactBRL(v)} />
+                  <Tooltip
+                    content={({ active, payload, label }) => {
+                      if (active && payload && payload.length) {
+                        return (
+                          <div className="bg-zinc-950 border border-zinc-700 p-2.5 rounded-lg text-xs space-y-1 shadow-xl">
+                            <div className="font-bold text-white">{label}</div>
+                            <div className="text-amber-400 font-mono-numbers">Cenário Atual: {formatBRL(Number(payload[0]?.value) || 0)}</div>
+                            <div className="text-emerald-400 font-mono-numbers">Com Amortização Extra: {formatBRL(Number(payload[1]?.value) || 0)}</div>
+                          </div>
+                        );
+                      }
+                      return null;
+                    }}
+                  />
+                  <Area type="monotone" dataKey="CenarioAtual" name="Cenário Atual" stroke="#f59e0b" strokeWidth={2} fill="url(#colorBaselinePushed)" />
+                  <Area type="monotone" dataKey="ComAmortizacaoExtra" name="Com Amortização Extra" stroke="#10b981" strokeWidth={2} fill="url(#colorExtraPushed)" />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        )}
+
         {activePushedDebts.length === 0 ? (
           <div className="p-6 text-center text-xs text-zinc-400 bg-zinc-950/60 rounded-xl border border-zinc-800">
             Nenhuma despesa ou conta postergada no momento.
@@ -1008,6 +1096,83 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
             Total a Amortizar: {formatBRL(totalFutureDebt)}
           </span>
         </div>
+
+        {/* Gráfico de Redução de Saldo Devedor & Simulador de Amortização Extra (Futuras) */}
+        {futureDebts.length > 0 && (
+          <div className="p-4 rounded-xl bg-zinc-950/80 border border-zinc-800 space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <span className="text-xs font-bold text-white block">Evolução e Comparativo de Amortização (Próximos 12 Meses)</span>
+                <span className="text-[11px] text-zinc-400">Compare o saldo devedor projetado com pagamentos extras mensais.</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="text-[11px] text-zinc-300 font-medium">Amortização Extra Mensal (R$):</label>
+                <input
+                  type="number"
+                  step="100"
+                  min="0"
+                  value={extraAmortizationFuture}
+                  onChange={(e) => setExtraAmortizationFuture(parseFloat(e.target.value) || 0)}
+                  className="w-28 px-2.5 py-1 rounded-lg bg-zinc-900 border border-zinc-700 text-xs text-white font-mono-numbers outline-none focus:border-emerald-500 font-bold"
+                />
+              </div>
+            </div>
+
+            <div className="h-56 w-full pt-1">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart
+                  data={Array.from({ length: 12 }, (_, i) => {
+                    const targetM = addMonths(selectedMonth, i);
+                    const label = getMonthLabel(targetM);
+                    let baseline = 0;
+                    futureDebts.forEach((item) => {
+                      if (getMonthDiff(selectedMonth, targetM) >= 0 && getMonthDiff(targetM, item.endMonth) <= 0) {
+                        baseline += item.monthlyAmount * Math.max(1, getMonthDiff(targetM, item.endMonth) + 1);
+                      }
+                    });
+                    const withExtra = Math.max(0, baseline - extraAmortizationFuture * i);
+                    return {
+                      month: label,
+                      CenarioAtual: baseline,
+                      ComAmortizacaoExtra: withExtra,
+                    };
+                  })}
+                  margin={{ top: 10, right: 10, left: -15, bottom: 0 }}
+                >
+                  <defs>
+                    <linearGradient id="colorBaselineFuture" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#6366f1" stopOpacity={0.4} />
+                      <stop offset="95%" stopColor="#6366f1" stopOpacity={0.0} />
+                    </linearGradient>
+                    <linearGradient id="colorExtraFuture" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.4} />
+                      <stop offset="95%" stopColor="#10b981" stopOpacity={0.0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
+                  <XAxis dataKey="month" stroke="#71717a" fontSize={10} tickLine={false} />
+                  <YAxis stroke="#71717a" fontSize={10} tickLine={false} tickFormatter={(v) => formatCompactBRL(v)} />
+                  <Tooltip
+                    content={({ active, payload, label }) => {
+                      if (active && payload && payload.length) {
+                        return (
+                          <div className="bg-zinc-950 border border-zinc-700 p-2.5 rounded-lg text-xs space-y-1 shadow-xl">
+                            <div className="font-bold text-white">{label}</div>
+                            <div className="text-indigo-400 font-mono-numbers">Cenário Atual: {formatBRL(Number(payload[0]?.value) || 0)}</div>
+                            <div className="text-emerald-400 font-mono-numbers">Com Amortização Extra: {formatBRL(Number(payload[1]?.value) || 0)}</div>
+                          </div>
+                        );
+                      }
+                      return null;
+                    }}
+                  />
+                  <Area type="monotone" dataKey="CenarioAtual" name="Cenário Atual" stroke="#6366f1" strokeWidth={2} fill="url(#colorBaselineFuture)" />
+                  <Area type="monotone" dataKey="ComAmortizacaoExtra" name="Com Amortização Extra" stroke="#10b981" strokeWidth={2} fill="url(#colorExtraFuture)" />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        )}
 
         {futureDebts.length === 0 ? (
           <div className="p-6 text-center text-xs text-zinc-400 bg-zinc-950/60 rounded-xl border border-zinc-800">
