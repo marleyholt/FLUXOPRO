@@ -221,6 +221,7 @@ export interface AppData {
   cardTransactions: CardTransaction[];
   bankAccounts?: BankAccountConfig[];
   monthlyClosings?: Record<string, MonthlyClosingRecord>;
+  savedSubItemDebts?: Record<string, boolean>;
 }
 
 export interface CsvParsedItem {

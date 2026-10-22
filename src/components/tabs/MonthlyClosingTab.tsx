@@ -59,6 +59,7 @@ export const MonthlyClosingTab: React.FC = () => {
     resolvePushedDebt,
     setCardRealInvoice,
     addVariableExpenseLog,
+    markSubItemAsSaved,
   } = useFinance();
 
   const isClosed = isMonthClosed(selectedMonth);
@@ -118,6 +119,7 @@ export const MonthlyClosingTab: React.FC = () => {
   // Reopen Modal State
   const [isReopenModalOpen, setIsReopenModalOpen] = useState<boolean>(false);
   const [reopenReasonInput, setReopenReasonInput] = useState<string>('');
+  const [pastBillCategoryFilter, setPastBillCategoryFilter] = useState<string>('ALL');
 
   // Postpone Modal State
   const [postponeModalItem, setPostponeModalItem] = useState<{
@@ -385,6 +387,15 @@ export const MonthlyClosingTab: React.FC = () => {
     });
   });
 
+  const pastBillCategories = Array.from(new Set(pastUnpaidBills.map((b) => b.category)));
+  const filteredPastUnpaidBills = pastUnpaidBills.filter((item) => {
+    if (pastBillCategoryFilter !== 'ALL' && item.category !== pastBillCategoryFilter) {
+      return false;
+    }
+    return true;
+  });
+  const totalPastUnpaidAmount = filteredPastUnpaidBills.reduce((acc, curr) => acc + curr.amount, 0);
+
   const parsedBankBalance = parseFormattedNumber(realBankBalance);
   const isOverdraft = parsedBankBalance < 0;
   const projectedBalance = current.finalBalance;
@@ -516,8 +527,6 @@ export const MonthlyClosingTab: React.FC = () => {
     setSavedSuccessMsg(`Mês de ${selectedMonthLabel} reaberto com sucesso para edições!`);
     setTimeout(() => setSavedSuccessMsg(null), 4000);
   };
-
-  const totalPastUnpaidAmount = pastUnpaidBills.reduce((acc, curr) => acc + curr.amount, 0);
 
   return (
     <div className="space-y-6 pb-16">
@@ -919,19 +928,37 @@ export const MonthlyClosingTab: React.FC = () => {
               Abaixo estão listadas todas as despesas e obrigações de <strong>meses passados</strong> que ainda não foram marcadas como pagas. Mapeie e liquide estas contas para manter seu fluxo de caixa saneado.
             </p>
 
-            {pastUnpaidBills.length === 0 ? (
+            {pastUnpaidBills.length > 0 && (
+              <div className="flex items-center gap-2 pt-1">
+                <span className="text-[11px] text-zinc-400 font-medium shrink-0">Filtrar Categoria:</span>
+                <select
+                  value={pastBillCategoryFilter}
+                  onChange={(e) => setPastBillCategoryFilter(e.target.value)}
+                  className="flex-1 px-2.5 py-1.5 rounded-lg bg-zinc-950 border border-zinc-700 text-xs text-white outline-none focus:border-amber-500 font-medium"
+                >
+                  <option value="ALL">Todas as Categorias ({pastUnpaidBills.length})</option>
+                  {pastBillCategories.map((cat) => (
+                    <option key={cat} value={cat}>
+                      {cat}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {filteredPastUnpaidBills.length === 0 ? (
               <div className="p-8 rounded-2xl bg-zinc-950/60 border border-zinc-800 text-center space-y-2">
                 <div className="w-10 h-10 rounded-full bg-emerald-500/10 text-emerald-400 mx-auto flex items-center justify-center">
                   <Check className="w-5 h-5 stroke-[2.5]" />
                 </div>
-                <h4 className="text-sm font-bold text-white">Nenhuma Pendência Retroativa!</h4>
+                <h4 className="text-sm font-bold text-white">Nenhuma Pendência Encontrada</h4>
                 <p className="text-xs text-zinc-400">
-                  Todas as contas dos meses anteriores foram marcadas como pagas e quitadas.
+                  Nenhuma conta pendente para os filtros selecionados.
                 </p>
               </div>
             ) : (
               <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1">
-                {pastUnpaidBills.map((item) => (
+                {filteredPastUnpaidBills.map((item) => (
                   <div
                     key={item.id}
                     className="p-3.5 rounded-xl bg-zinc-950 border border-zinc-800 space-y-2.5 text-xs hover:border-zinc-700 transition"
@@ -959,7 +986,18 @@ export const MonthlyClosingTab: React.FC = () => {
 
                     <div className="flex items-center justify-between pt-2 border-t border-zinc-850 text-[11px] gap-2 flex-wrap">
                       <span className="text-zinc-500">Pendente de liquidação</span>
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {item.type === 'subitem' && item.subItemId && (
+                          <button
+                            onClick={() => {
+                              markSubItemAsSaved(item.subItemId!, item.month);
+                            }}
+                            className="py-1.5 px-2.5 rounded-lg font-bold bg-teal-500/20 hover:bg-teal-500/30 text-teal-300 border border-teal-500/30 transition flex items-center gap-1"
+                            title="Indica que economizou: remove das pendências deste mês sem alterar as previsões futuras"
+                          >
+                            <span>💡 Economizei</span>
+                          </button>
+                        )}
                         <button
                           onClick={() => {
                             setPostponeModalItem({

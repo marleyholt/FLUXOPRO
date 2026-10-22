@@ -88,6 +88,7 @@ interface FinanceContextType {
   addBudgetSubItem: (categoryId: string, name: string, amount: number) => void;
   updateBudgetSubItem: (categoryId: string, subItemId: string, name: string, amount: number) => void;
   deleteBudgetSubItem: (categoryId: string, subItemId: string) => void;
+  markSubItemAsSaved: (subItemId: string, month: string) => void;
 
   addOrIncrementExpense: (params: {
     title: string;
@@ -797,6 +798,18 @@ function sanitizeAppData(loaded: AppData): AppData {
     [data, persistLocally]
   );
 
+  const markSubItemAsSaved = useCallback(
+    (subItemId: string, month: string) => {
+      const key = `${subItemId}-${month}`;
+      const updatedSaved = { ...(data.savedSubItemDebts || {}), [key]: true };
+      persistLocally({
+        ...data,
+        savedSubItemDebts: updatedSaved,
+      });
+    },
+    [data, persistLocally]
+  );
+
   const updateBudgetEnvelope = useCallback(
     (envelopeId: string, name: string, targetAmount: number) => {
       const updated = data.budgetEnvelopes.map((env) =>
@@ -1389,6 +1402,7 @@ function sanitizeAppData(loaded: AppData): AppData {
         addBudgetSubItem,
         updateBudgetSubItem,
         deleteBudgetSubItem,
+        markSubItemAsSaved,
         addOrIncrementExpense,
         isMonthClosed,
         closeMonth,
