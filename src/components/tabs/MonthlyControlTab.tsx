@@ -86,6 +86,10 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
     name: string;
     target: number;
   } | null>(null);
+  const [editingSubItem, setEditingSubItem] = useState<{
+    categoryId: string;
+    subItem: { id: string; name: string; amount: number };
+  } | null>(null);
 
   // In-app deletion confirmation (never uses window.confirm which is blocked in iframes)
   const [deleteConfirm, setDeleteConfirm] = useState<{
@@ -1014,9 +1018,26 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
                                       <div className="flex items-center gap-3 self-end sm:self-auto text-xs font-mono-numbers">
                                         <div className="text-right">
                                           <span className="text-[10px] text-zinc-500 block">Previsto / Pago</span>
-                                          <span className="font-semibold text-zinc-300">
-                                            {formatBRL(sub.amount)}
-                                          </span>
+                                          {!isClosed ? (
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                setEditingSubItem({
+                                                  categoryId: env.id,
+                                                  subItem: { id: sub.id, name: sub.name, amount: sub.amount },
+                                                })
+                                              }
+                                              className="font-semibold text-zinc-300 hover:text-emerald-400 hover:underline transition cursor-pointer inline-flex items-center gap-1"
+                                              title="Clique para editar o valor previsto"
+                                            >
+                                              <span>{formatBRL(sub.amount)}</span>
+                                              <Edit2 className="w-2.5 h-2.5 opacity-60" />
+                                            </button>
+                                          ) : (
+                                            <span className="font-semibold text-zinc-300">
+                                              {formatBRL(sub.amount)}
+                                            </span>
+                                          )}
                                           <span className="text-zinc-500 mx-1">/</span>
                                           <span className={`font-bold ${spentOnSub > 0 ? (isOver ? 'text-rose-400' : 'text-emerald-400') : 'text-zinc-500'}`}>
                                             {formatBRL(spentOnSub)}
@@ -1724,6 +1745,92 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
                   className="px-4 py-1.5 rounded-lg font-bold bg-emerald-500 hover:bg-emerald-400 text-zinc-950 transition"
                 >
                   Criar Categoria
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Subitem Edit Modal */}
+      {editingSubItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
+          <div className="w-full max-w-md rounded-2xl bg-zinc-950 border border-zinc-800 p-6 space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
+              <h3 className="font-bold text-white text-sm flex items-center gap-2">
+                <Edit2 className="w-4 h-4 text-emerald-400" />
+                Editar Subitem / Previsão
+              </h3>
+              <button
+                type="button"
+                onClick={() => setEditingSubItem(null)}
+                className="text-zinc-400 hover:text-white p-1 rounded-lg bg-zinc-900"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const parsed = parseFloat(editingSubItem.subItem.amount as any);
+                if (!editingSubItem.subItem.name.trim() || isNaN(parsed) || parsed < 0) return;
+                updateBudgetSubItem(
+                  editingSubItem.categoryId,
+                  editingSubItem.subItem.id,
+                  editingSubItem.subItem.name.trim(),
+                  parsed
+                );
+                setEditingSubItem(null);
+              }}
+              className="space-y-4"
+            >
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-zinc-300">Nome do Subitem</label>
+                <input
+                  type="text"
+                  required
+                  value={editingSubItem.subItem.name}
+                  onChange={(e) =>
+                    setEditingSubItem({
+                      ...editingSubItem,
+                      subItem: { ...editingSubItem.subItem, name: e.target.value },
+                    })
+                  }
+                  className="w-full px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-700 text-xs text-white outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-zinc-300">Valor Previsto (R$)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  required
+                  value={editingSubItem.subItem.amount}
+                  onChange={(e) =>
+                    setEditingSubItem({
+                      ...editingSubItem,
+                      subItem: { ...editingSubItem.subItem, amount: parseFloat(e.target.value) || 0 },
+                    })
+                  }
+                  className="w-full px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-700 text-xs text-white font-mono-numbers outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-zinc-800">
+                <button
+                  type="button"
+                  onClick={() => setEditingSubItem(null)}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold bg-zinc-900 hover:bg-zinc-800 text-zinc-300 transition"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-xl text-xs font-bold bg-emerald-500 hover:bg-emerald-400 text-zinc-950 transition shadow"
+                >
+                  Salvar Alterações
                 </button>
               </div>
             </form>

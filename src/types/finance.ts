@@ -87,7 +87,8 @@ export interface CreditCard {
   realInvoiceTotalByMonth?: Record<string, number>; // key: YYYY-MM -> real bank total
   invoicePaymentDateByMonth?: Record<string, string>; // key: YYYY-MM -> YYYY-MM-DD data de vencimento/pagamento
   invoicePaymentStatusByMonth?: Record<string, InvoicePaymentStatus>; // key: YYYY-MM -> status do pagamento
-  invoicePaidAmountByMonth?: Record<string, number>; // key: YYYY-MM -> valor pago (se parcial)
+  invoicePaidAmountByMonth?: Record<string, number>;
+  invoicePaymentMonthByMonth?: Record<string, string>; // key: YYYY-MM -> valor pago (se parcial)
   lastConsolidatedAt?: Record<string, string>; // key: YYYY-MM -> ISO timestamp de consolidação da fatura
 }
 
@@ -148,10 +149,13 @@ export interface PushedDebtBill {
   expenseId: string;
   expenseTitle: string;
   amount: number;
-  month: string; // YYYY-MM
+  month: string; // YYYY-MM original
+  targetMonth: string; // YYYY-MM target postponement month
   pushedAt: string;
   reason?: string;
   status: 'pushed' | 'paid';
+  type?: 'expense' | 'card';
+  cardId?: string;
 }
 
 export interface BankStatementUploadRecord {
@@ -185,6 +189,8 @@ export interface MonthlyClosingRecord {
   reopenedAt?: string;
   reopenHistory?: { reason: string; timestamp: string }[];
   bankStatementsUploaded?: BankStatementUploadRecord[];
+  manualInterest?: number;
+  manualIof?: number;
 }
 
 

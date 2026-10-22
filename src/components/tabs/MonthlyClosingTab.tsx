@@ -25,6 +25,7 @@ import {
   X,
   Trash2,
   CheckSquare,
+  Edit2,
 } from 'lucide-react';
 import { useFinance } from '../../context/FinanceContext';
 import { MonthlyClosingRecord, AppData } from '../../types/finance';
@@ -54,6 +55,9 @@ export const MonthlyClosingTab: React.FC = () => {
     reopenMonth,
     saveToFirebase,
     isUsingFirebase,
+    pushBillDebt,
+    resolvePushedDebt,
+    setCardRealInvoice,
   } = useFinance();
 
   const isClosed = isMonthClosed(selectedMonth);
@@ -101,12 +105,47 @@ export const MonthlyClosingTab: React.FC = () => {
   const [closingNotes, setClosingNotes] = useState<string>(
     existingClosing?.notes || ''
   );
+  const [manualInterestInput, setManualInterestInput] = useState<string>(
+    existingClosing?.manualInterest !== undefined ? String(existingClosing.manualInterest) : ''
+  );
+  const [manualIofInput, setManualIofInput] = useState<string>(
+    existingClosing?.manualIof !== undefined ? String(existingClosing.manualIof) : ''
+  );
   const [savedSuccessMsg, setSavedSuccessMsg] = useState<string | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
 
   // Reopen Modal State
   const [isReopenModalOpen, setIsReopenModalOpen] = useState<boolean>(false);
   const [reopenReasonInput, setReopenReasonInput] = useState<string>('');
+
+  // Postpone Modal State
+  const [postponeModalItem, setPostponeModalItem] = useState<{
+    id: string;
+    expenseId: string;
+    title: string;
+    amount: number;
+    month: string;
+    type: 'expense' | 'card';
+    cardId?: string;
+  } | null>(null);
+  const [targetPostponeMonth, setTargetPostponeMonth] = useState<string>(addMonths(selectedMonth, 1));
+
+  const handleConfirmPostpone = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!postponeModalItem) return;
+    pushBillDebt(
+      postponeModalItem.expenseId,
+      postponeModalItem.title,
+      postponeModalItem.amount,
+      postponeModalItem.month,
+      targetPostponeMonth,
+      postponeModalItem.type,
+      postponeModalItem.cardId
+    );
+    setPostponeModalItem(null);
+    setSavedSuccessMsg(`Despesa adiada com sucesso para ${getMonthLabel(targetPostponeMonth)}!`);
+    setTimeout(() => setSavedSuccessMsg(null), 4000);
+  };
 
   // Lista de meses selecionáveis incluindo histórico recente e projeções
   const selectableMonths = React.useMemo(() => {
@@ -135,16 +174,20 @@ export const MonthlyClosingTab: React.FC = () => {
       setCustomBankName(existingClosing.bankAccountName || '');
       setNegativeSinceDate(existingClosing.negativeSinceDate || `${selectedMonth}-01`);
       setClosingNotes(existingClosing.notes || '');
+      setManualInterestInput(existingClosing.manualInterest !== undefined ? String(existingClosing.manualInterest) : '');
+      setManualIofInput(existingClosing.manualIof !== undefined ? String(existingClosing.manualIof) : '');
     } else {
       setRealBankBalance(String(current.previousBalance.toFixed(2)));
       setSelectedBankId(data.bankAccounts?.[0]?.id || '');
       setCustomBankName('');
       setNegativeSinceDate(`${selectedMonth}-01`);
       setClosingNotes('');
+      setManualInterestInput('');
+      setManualIofInput('');
     }
   }, [selectedMonth, existingClosing, current.previousBalance, data.bankAccounts]);
 
-  // Collect all unpaid expenses from PAST months (months strictly prior to selectedMonth)
+  // Collect all unpaid expenses, card invoices and pushed debts from past months
   interface PastUnpaidBill {
     id: string;
     expenseId: string;
@@ -155,6 +198,10 @@ export const MonthlyClosingTab: React.FC = () => {
     month: string;
     monthLabel: string;
     installmentText?: string;
+    type: 'expense' | 'card';
+    cardId?: string;
+    isPushed?: boolean;
+    targetMonth?: string;
   }
 
   const pastUnpaidBills: PastUnpaidBill[] = [];
@@ -164,6 +211,29 @@ export const MonthlyClosingTab: React.FC = () => {
     .map((s) => s.month)
     .filter((m) => m < selectedMonth);
 
+  // 1. Gather pushed debts targeting selectedMonth
+  Object.entries(data.monthlyClosings || {}).forEach(([mClosing, closing]) => {
+    (closing.pushedDebts || []).forEach((pd) => {
+      if (pd.status === 'pushed' && pd.targetMonth === selectedMonth) {
+        pastUnpaidBills.push({
+          id: pd.id,
+          expenseId: pd.expenseId,
+          title: pd.expenseTitle,
+          amount: pd.amount,
+          category: pd.type === 'card' ? 'Fatura de Cartão' : 'Despesa Adiada',
+          scope: 'PJ',
+          month: pd.month,
+          monthLabel: `${getMonthLabel(pd.month)} (Adiado)`,
+          type: pd.type || 'expense',
+          cardId: pd.cardId,
+          isPushed: true,
+          targetMonth: pd.targetMonth,
+        });
+      }
+    });
+  });
+
+  // 2. Unpaid expenses from past months
   data.expenses.forEach((exp) => {
     pastMonths.forEach((pastM) => {
       const pastMIdx = parseInt(pastM.split('-')[1], 10);
@@ -192,17 +262,58 @@ export const MonthlyClosingTab: React.FC = () => {
       }
 
       if (isActive && !exp.paidMonths?.[pastM]) {
-        pastUnpaidBills.push({
-          id: `${exp.id}-${pastM}`,
-          expenseId: exp.id,
-          title: exp.title,
-          amount: exp.amount,
-          category: exp.category,
-          scope: exp.scope,
-          month: pastM,
-          monthLabel: getMonthLabel(pastM),
-          installmentText: instText,
-        });
+        const alreadyAdded = pastUnpaidBills.some((b) => b.expenseId === exp.id && b.month === pastM);
+        if (!alreadyAdded) {
+          pastUnpaidBills.push({
+            id: `${exp.id}-${pastM}`,
+            expenseId: exp.id,
+            title: exp.title,
+            amount: exp.amount,
+            category: exp.category,
+            scope: exp.scope,
+            month: pastM,
+            monthLabel: getMonthLabel(pastM),
+            installmentText: instText,
+            type: 'expense',
+          });
+        }
+      }
+    });
+  });
+
+  // 3. Unpaid credit card invoices from past months
+  data.creditCards.forEach((card) => {
+    pastMonths.forEach((pastM) => {
+      const realInv = card.realInvoiceTotalByMonth?.[pastM];
+      let cardDetailedSum = 0;
+      data.cardTransactions.forEach((tx) => {
+        if (tx.cardId !== card.id || tx.isPaused) return;
+        if (tx.type === 'recurring' && getMonthDiff(tx.startMonth, pastM) >= 0) cardDetailedSum += tx.installmentAmount;
+        else if (tx.type === 'installment' && getInstallmentInfo(tx.startMonth, tx.totalInstallments, pastM).isActive) cardDetailedSum += tx.installmentAmount;
+        else if (tx.type === 'single' && tx.startMonth === pastM) cardDetailedSum += tx.installmentAmount;
+      });
+      const invoiceAmt = realInv !== undefined ? Math.max(realInv, cardDetailedSum) : cardDetailedSum;
+
+      const status = card.invoicePaymentStatusByMonth?.[pastM];
+      const isPaid = status === 'paid_on_time' || status === 'paid_late';
+
+      if (invoiceAmt > 0 && !isPaid) {
+        const alreadyAdded = pastUnpaidBills.some((b) => b.expenseId === card.id && b.month === pastM);
+        if (!alreadyAdded) {
+          pastUnpaidBills.push({
+            id: `card-inv-${card.id}-${pastM}`,
+            expenseId: card.id,
+            title: `Fatura ${card.name}`,
+            amount: invoiceAmt,
+            category: 'Cartão de Crédito',
+            scope: card.scope,
+            month: pastM,
+            monthLabel: getMonthLabel(pastM),
+            installmentText: `Banco: ${card.bank}`,
+            type: 'card',
+            cardId: card.id,
+          });
+        }
       }
     });
   });
@@ -271,6 +382,9 @@ export const MonthlyClosingTab: React.FC = () => {
       return;
     }
 
+    const numericManualInterest = manualInterestInput.trim() !== '' ? parseFormattedNumber(manualInterestInput) : undefined;
+    const numericManualIof = manualIofInput.trim() !== '' ? parseFormattedNumber(manualIofInput) : undefined;
+
     const closingRecord: MonthlyClosingRecord = {
       month: selectedMonth,
       closingRealBalance: numericVal,
@@ -284,6 +398,8 @@ export const MonthlyClosingTab: React.FC = () => {
       pushedDebts: existingClosing?.pushedDebts || [],
       notes: closingNotes.trim() || undefined,
       reopenHistory: existingClosing?.reopenHistory || [],
+      manualInterest: numericManualInterest !== undefined && !isNaN(numericManualInterest) ? numericManualInterest : undefined,
+      manualIof: numericManualIof !== undefined && !isNaN(numericManualIof) ? numericManualIof : undefined,
       isClosed: false, // A abertura do mês NUNCA trava as edições dele!
     };
 
@@ -663,6 +779,42 @@ export const MonthlyClosingTab: React.FC = () => {
                     </p>
                   </div>
                 )}
+
+                {/* Ajuste Manual de Juros e IOF Reais Pagos */}
+                <div className="p-4 rounded-xl bg-zinc-950/80 border border-zinc-800 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-zinc-200 text-xs flex items-center gap-1.5">
+                      <Edit2 className="w-3.5 h-3.5 text-emerald-400" />
+                      Ajustar Juros & IOF Pagos (Valor Real):
+                    </span>
+                    <span className="text-[10px] text-zinc-400">Opcional</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-[11px] text-zinc-300 font-medium block mb-1">Juros Reais Pagos (R$)</label>
+                      <input
+                        type="text"
+                        placeholder={`Proj: ${projection.projectedInterest.toFixed(2)}`}
+                        value={manualInterestInput}
+                        onChange={(e) => setManualInterestInput(e.target.value)}
+                        className="w-full px-2.5 py-1.5 rounded-lg bg-zinc-900 border border-zinc-700 text-white font-mono-numbers text-xs outline-none focus:border-emerald-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[11px] text-zinc-300 font-medium block mb-1">IOF Real Pago (R$)</label>
+                      <input
+                        type="text"
+                        placeholder={`Proj: ${projection.totalProjectedIof.toFixed(2)}`}
+                        value={manualIofInput}
+                        onChange={(e) => setManualIofInput(e.target.value)}
+                        className="w-full px-2.5 py-1.5 rounded-lg bg-zinc-900 border border-zinc-700 text-white font-mono-numbers text-xs outline-none focus:border-emerald-500"
+                      />
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-zinc-400 leading-tight">
+                    Ao informar os valores efetivamente cobrados pelo banco, o sistema usará estes números na despesa real do mês.
+                  </p>
+                </div>
               </div>
             ) : (
               <div className="p-4 rounded-xl bg-emerald-950/30 border border-emerald-500/30 text-emerald-300 space-y-1 text-xs">
@@ -738,15 +890,43 @@ export const MonthlyClosingTab: React.FC = () => {
                       </strong>
                     </div>
 
-                    <div className="flex items-center justify-between pt-2 border-t border-zinc-850 text-[11px]">
-                      <span className="text-zinc-500">Mapeado manualmente</span>
-                      <button
-                        onClick={() => toggleExpensePaid(item.expenseId, item.month)}
-                        className="py-1 px-3 rounded-lg font-bold bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 transition flex items-center gap-1"
-                      >
-                        <Check className="w-3.5 h-3.5" />
-                        <span>Marcar como Pago em {item.monthLabel}</span>
-                      </button>
+                    <div className="flex items-center justify-between pt-2 border-t border-zinc-850 text-[11px] gap-2 flex-wrap">
+                      <span className="text-zinc-500">Pendente de liquidação</span>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => {
+                            setPostponeModalItem({
+                              id: item.id,
+                              expenseId: item.expenseId,
+                              title: item.title,
+                              amount: item.amount,
+                              month: item.month,
+                              type: item.type,
+                              cardId: item.cardId,
+                            });
+                            setTargetPostponeMonth(addMonths(selectedMonth, 1));
+                          }}
+                          className="py-1.5 px-2.5 rounded-lg font-bold bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 transition flex items-center gap-1"
+                        >
+                          <Clock className="w-3.5 h-3.5" />
+                          <span>Postegar</span>
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (item.type === 'card' && item.cardId) {
+                              setCardRealInvoice(item.cardId, item.month, item.amount, undefined, 'paid_on_time');
+                            } else if (item.isPushed) {
+                              resolvePushedDebt(item.month, item.id);
+                            } else {
+                              toggleExpensePaid(item.expenseId, item.month);
+                            }
+                          }}
+                          className="py-1.5 px-3 rounded-lg font-bold bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 transition flex items-center gap-1"
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                          <span>Confirmar Pagamento</span>
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -840,6 +1020,77 @@ export const MonthlyClosingTab: React.FC = () => {
                 >
                   <Unlock className="w-3.5 h-3.5" />
                   <span>Confirmar Reabertura</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: POSTEGAR / REAGENDAR DESPESA OU FATURA */}
+      {postponeModalItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
+          <div className="w-full max-w-md rounded-2xl bg-zinc-950 border border-zinc-800 p-5 space-y-4 shadow-2xl text-xs">
+            <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
+                  <Clock className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-white text-sm">Postegar / Reagendar Despesa</h3>
+                  <span className="text-[11px] text-zinc-400">{postponeModalItem.title}</span>
+                </div>
+              </div>
+              <button
+                onClick={() => setPostponeModalItem(null)}
+                className="text-zinc-400 hover:text-white"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleConfirmPostpone} className="space-y-4">
+              <div className="p-3 rounded-xl bg-zinc-900 border border-zinc-800 space-y-1">
+                <span className="text-zinc-400 block">Valor da Conta / Fatura:</span>
+                <strong className="text-white text-sm font-mono-numbers">{formatBRL(postponeModalItem.amount)}</strong>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="font-semibold text-zinc-200 block">
+                  Selecione o Mês Futuro para Desembolso:
+                </label>
+                <select
+                  value={targetPostponeMonth}
+                  onChange={(e) => setTargetPostponeMonth(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-700 text-white font-bold outline-none focus:border-amber-500"
+                >
+                  {selectableMonths
+                    .filter((m) => m.value >= selectedMonth)
+                    .map((m) => (
+                      <option key={m.value} value={m.value}>
+                        {m.label} ({m.value}) {m.value === selectedMonth ? '📍 Mês Atual' : ''}
+                      </option>
+                    ))}
+                </select>
+                <p className="text-[11px] text-zinc-400 leading-relaxed">
+                  Ao postegar, esta obrigação será movida para o mês selecionado, alterando suas previsões de caixa naquele mês. Quando o mês planejado chegar, ela reaparecerá para confirmação ou novo reagendamento.
+                </p>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-zinc-800">
+                <button
+                  type="button"
+                  onClick={() => setPostponeModalItem(null)}
+                  className="px-3.5 py-2 rounded-lg text-zinc-400 hover:text-white"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-lg font-bold bg-amber-500 hover:bg-amber-400 text-zinc-950 transition flex items-center gap-1.5 shadow-md shadow-amber-500/20"
+                >
+                  <Clock className="w-3.5 h-3.5" />
+                  <span>Confirmar Postegação</span>
                 </button>
               </div>
             </form>

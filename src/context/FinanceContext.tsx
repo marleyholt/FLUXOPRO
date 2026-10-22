@@ -26,7 +26,7 @@ import {
   saveFirebaseConfig,
 } from '../services/dataService';
 import { INITIAL_SEED_DATA } from '../data/seedData';
-import { calculateForecast, getMonthDiff } from '../utils/calculations';
+import { calculateForecast, getMonthDiff, getMonthLabel } from '../utils/calculations';
 import { convertCsvItemToTransaction } from '../utils/csvParser';
 
 interface FinanceContextType {
@@ -73,7 +73,8 @@ interface FinanceContextType {
     realTotal: number | undefined,
     paymentDate?: string,
     paymentStatus?: InvoicePaymentStatus,
-    paidAmount?: number
+    paidAmount?: number,
+    paymentMonth?: string
   ) => void;
   updateCreditCardTrend: (cardId: string, manualProjectedTrend: number | undefined) => void;
 
@@ -122,6 +123,9 @@ interface FinanceContextType {
     expenseTitle: string,
     amount: number,
     month: string,
+    targetMonth: string,
+    type?: 'expense' | 'card',
+    cardId?: string,
     reason?: string
   ) => void;
   resolveScheduledReminder: (month: string, reminderId: string) => void;
@@ -549,7 +553,8 @@ function sanitizeAppData(loaded: AppData): AppData {
       realTotal: number | undefined,
       paymentDate?: string,
       paymentStatus?: InvoicePaymentStatus,
-      paidAmount?: number
+      paidAmount?: number,
+      paymentMonth?: string
     ) => {
       if (isMonthClosed(month)) {
         console.warn(`Mês ${month} está fechado. Operação bloqueada.`);
@@ -561,6 +566,7 @@ function sanitizeAppData(loaded: AppData): AppData {
           const dateMap = { ...(card.invoicePaymentDateByMonth || {}) };
           const statusMap = { ...(card.invoicePaymentStatusByMonth || {}) };
           const paidMap = { ...(card.invoicePaidAmountByMonth || {}) };
+          const payMonthMap = { ...(card.invoicePaymentMonthByMonth || {}) };
 
           if (realTotal === undefined || isNaN(realTotal) || realTotal <= 0) {
             delete currentMap[month];
@@ -586,12 +592,19 @@ function sanitizeAppData(loaded: AppData): AppData {
             delete paidMap[month];
           }
 
+          if (paymentMonth && paymentMonth !== month) {
+            payMonthMap[month] = paymentMonth;
+          } else {
+            delete payMonthMap[month];
+          }
+
           return {
             ...card,
             realInvoiceTotalByMonth: currentMap,
             invoicePaymentDateByMonth: dateMap,
             invoicePaymentStatusByMonth: statusMap,
             invoicePaidAmountByMonth: paidMap,
+            invoicePaymentMonthByMonth: payMonthMap,
           };
         }
         return card;
@@ -1063,7 +1076,16 @@ function sanitizeAppData(loaded: AppData): AppData {
   );
 
   const pushBillDebt = useCallback(
-    (expenseId: string, expenseTitle: string, amount: number, month: string, reason?: string) => {
+    (
+      expenseId: string,
+      expenseTitle: string,
+      amount: number,
+      month: string,
+      targetMonth: string,
+      type: 'expense' | 'card' = 'expense',
+      cardId?: string,
+      reason?: string
+    ) => {
       const currentClosings = { ...(data.monthlyClosings || {}) };
       const closing = currentClosings[month] || {
         month,
@@ -1081,14 +1103,38 @@ function sanitizeAppData(loaded: AppData): AppData {
         expenseTitle,
         amount,
         month,
+        targetMonth,
         pushedAt: new Date().toISOString(),
-        reason: reason || 'Empurrado para pagamento posterior',
+        reason: reason || `Adiado para ${getMonthLabel(targetMonth)}`,
         status: 'pushed',
+        type,
+        cardId,
       };
 
       currentClosings[month] = {
         ...closing,
-        pushedDebts: [...closing.pushedDebts.filter((p) => p.expenseId !== expenseId), newPushed],
+        pushedDebts: [...(closing.pushedDebts || []).filter((p) => p.expenseId !== expenseId), newPushed],
+      };
+
+      persistLocally({
+        ...data,
+        monthlyClosings: currentClosings,
+      });
+    },
+    [data, persistLocally]
+  );
+
+  const resolvePushedDebt = useCallback(
+    (month: string, debtId: string) => {
+      const currentClosings = { ...(data.monthlyClosings || {}) };
+      const closing = currentClosings[month];
+      if (!closing || !closing.pushedDebts) return;
+
+      currentClosings[month] = {
+        ...closing,
+        pushedDebts: closing.pushedDebts.map((p) =>
+          p.id === debtId ? { ...p, status: 'paid' } : p
+        ),
       };
 
       persistLocally({
@@ -1109,23 +1155,6 @@ function sanitizeAppData(loaded: AppData): AppData {
         ...closing,
         scheduledReminders: closing.scheduledReminders.map((r) =>
           r.id === reminderId ? { ...r, status: 'paid' } : r
-        ),
-      };
-      persistLocally({ ...data, monthlyClosings: currentClosings });
-    },
-    [data, persistLocally]
-  );
-
-  const resolvePushedDebt = useCallback(
-    (month: string, pushedDebtId: string) => {
-      const currentClosings = { ...(data.monthlyClosings || {}) };
-      const closing = currentClosings[month];
-      if (!closing) return;
-
-      currentClosings[month] = {
-        ...closing,
-        pushedDebts: closing.pushedDebts.map((p) =>
-          p.id === pushedDebtId ? { ...p, status: 'paid' } : p
         ),
       };
       persistLocally({ ...data, monthlyClosings: currentClosings });

@@ -83,6 +83,7 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
   const [cardTxType, setCardTxType] = useState<'recurring' | 'installment' | 'single'>('installment');
   const [cardInstallments, setCardInstallments] = useState('10');
   const [cardCategory, setCardCategory] = useState('');
+  const [cardLinkedSubItemId, setCardLinkedSubItemId] = useState('unplanned');
 
   // Sync state when modal opens
   React.useEffect(() => {
@@ -102,6 +103,7 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
 
       setExpenseCategory(initialCat);
       setCardCategory(initialCat);
+      setCardLinkedSubItemId('unplanned');
       setIsNewCategory(false);
       setCustomCategoryName('');
       setCustomCategoryTarget('');
@@ -168,6 +170,8 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
         totalInstallments: numInst,
         startMonth,
         category: catToSave,
+        linkedSubItemId: cardLinkedSubItemId.startsWith('sub_') ? cardLinkedSubItemId.replace('sub_', '') : undefined,
+        isUnplanned: cardLinkedSubItemId === 'unplanned',
         needsReview,
         notes,
       });

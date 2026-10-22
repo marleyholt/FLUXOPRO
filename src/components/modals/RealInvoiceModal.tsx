@@ -30,6 +30,7 @@ export const RealInvoiceModal: React.FC<RealInvoiceModalProps> = ({
   // Status e valor do pagamento
   const [paymentStatus, setPaymentStatus] = useState<InvoicePaymentStatus>('paid_on_time');
   const [paidAmountInput, setPaidAmountInput] = useState<string>('');
+  const [paymentMonth, setPaymentMonth] = useState<string>(selectedMonth);
 
   useEffect(() => {
     if (isOpen) {
@@ -55,6 +56,7 @@ export const RealInvoiceModal: React.FC<RealInvoiceModalProps> = ({
 
       const existingPaidAmt = card.invoicePaidAmountByMonth?.[targetMonth];
       setPaidAmountInput(existingPaidAmt !== undefined ? String(existingPaidAmt) : '');
+      setPaymentMonth(card.invoicePaymentMonthByMonth?.[targetMonth] || targetMonth);
     }
   }, [card, targetMonth, isOpen]);
 
@@ -92,7 +94,7 @@ export const RealInvoiceModal: React.FC<RealInvoiceModalProps> = ({
     const realVal = inputValue.trim() === '' ? undefined : parsedReal;
     const paidVal = paidAmountInput.trim() === '' ? undefined : parsedPaid;
 
-    setCardRealInvoice(cardId, targetMonth, realVal, paymentDate, paymentStatus, paidVal);
+    setCardRealInvoice(cardId, targetMonth, realVal, paymentDate, paymentStatus, paidVal, paymentMonth);
     onClose();
   };
 
@@ -150,6 +152,26 @@ export const RealInvoiceModal: React.FC<RealInvoiceModalProps> = ({
                 ))}
               </select>
             </div>
+          {/* Mês de Desembolso / Pagamento */}
+          <div className="space-y-1 p-3 rounded-xl bg-zinc-900/40 border border-zinc-800">
+            <label className="font-semibold text-emerald-300 block mb-1">
+              Mês de Desembolso / Pagamento Efetivo na Matriz
+            </label>
+            <select
+              value={paymentMonth}
+              onChange={(e) => setPaymentMonth(e.target.value)}
+              className="w-full px-2.5 py-1.5 rounded-lg bg-zinc-950 border border-zinc-700 text-white outline-none focus:border-emerald-500 font-mono-numbers text-xs"
+            >
+              {summaries.map((s) => (
+                <option key={s.month} value={s.month}>
+                  {s.label} ({s.month}) {s.month === targetMonth ? '(Mes da Fatura)' : ''}
+                </option>
+              ))}
+            </select>
+            <p className="text-[10px] text-zinc-400 mt-1">
+              Define em qual mês a grana sai da conta para influenciar o fluxo de caixa, gráficos e tendências.
+            </p>
+          </div>
 
             <div className="space-y-1">
               <label className="font-semibold text-zinc-300 block">

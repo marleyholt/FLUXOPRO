@@ -375,6 +375,24 @@ export function calculateForecast(
     // Add unmapped card difference / projected trend
     variableEnvelopes += totalUnmappedDiff;
 
+    // Adjust for pushed / postponed debts targeting this month or from this month
+    let pushedOutflows = 0;
+    let pushedDeductions = 0;
+    Object.values(data.monthlyClosings || {}).forEach((closing) => {
+      (closing.pushedDebts || []).forEach((pd) => {
+        if (pd.status === 'pushed') {
+          if (pd.targetMonth === month) {
+            pushedOutflows += pd.amount;
+          }
+          if (pd.month === month && pd.targetMonth !== month) {
+            pushedDeductions += pd.amount;
+          }
+        }
+      });
+    });
+
+    variableEnvelopes = variableEnvelopes + pushedOutflows - pushedDeductions;
+
     // 5. Fiscal Recovery / Rolling Balance Calculation
     // Check if there is an explicit starting bank balance registered in monthlyClosings for THIS month
     let previousBalance = carriedBalance;
@@ -407,7 +425,15 @@ export function calculateForecast(
       const rate = bankConfig?.overdraftRateMonthly || 8.0;
       const freeDays = bankConfig?.overdraftFreeDays || 0;
       const proj = calculateOverdraftProjections(previousBalance, rate, freeDays, 30);
-      overdraftFees = proj.totalProjectedCost;
+      
+      const closingObj = data.monthlyClosings?.[month];
+      const manualInterest = closingObj?.manualInterest;
+      const manualIof = closingObj?.manualIof;
+
+      const effectiveInterest = manualInterest !== undefined && !isNaN(manualInterest) ? manualInterest : proj.projectedInterest;
+      const effectiveIof = manualIof !== undefined && !isNaN(manualIof) ? manualIof : proj.totalProjectedIof;
+
+      overdraftFees = effectiveInterest + effectiveIof;
     }
 
     // O Saldo Disponível Mês Anterior entra diretamente em Entradas (se for negativo, reduz o montante disponível)
