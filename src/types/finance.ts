@@ -30,12 +30,14 @@ export interface Expense {
   notes?: string;
   needsReview?: boolean; // Tag ⚠️ Verificar
   paidMonths?: Record<string, boolean>; // key: 'YYYY-MM', value: true if paid
+  linkedSubItemId?: string; // ID do subitem de previsão vinculado
 }
 
 export interface BudgetSubItem {
   id: string;
   name: string;
   amount: number;
+  endMonth?: string;
 }
 
 export interface VariableBudgetCategory {
@@ -156,6 +158,8 @@ export interface PushedDebtBill {
   status: 'pushed' | 'paid';
   type?: 'expense' | 'card' | 'subitem';
   cardId?: string;
+  interestRate?: number;
+  interestType?: 'daily' | 'monthly';
 }
 
 export interface BankStatementUploadRecord {

@@ -131,6 +131,8 @@ export const MonthlyClosingTab: React.FC = () => {
     type: 'expense' | 'card' | 'subitem';
     cardId?: string;
   } | null>(null);
+  const [postponeInterestRate, setPostponeInterestRate] = useState<string>('');
+  const [postponeInterestType, setPostponeInterestType] = useState<'daily' | 'monthly'>('monthly');
   const [targetPostponeMonth, setTargetPostponeMonth] = useState<string>(addMonths(selectedMonth, 1));
 
   const handleConfirmPostpone = (e: React.FormEvent) => {
@@ -143,9 +145,13 @@ export const MonthlyClosingTab: React.FC = () => {
       postponeModalItem.month,
       targetPostponeMonth,
       postponeModalItem.type,
-      postponeModalItem.cardId
+      postponeModalItem.cardId,
+      undefined,
+      parseFormattedNumber(postponeInterestRate) || undefined,
+      postponeInterestType
     );
     setPostponeModalItem(null);
+    setPostponeInterestRate('');
     setSavedSuccessMsg(`Despesa adiada com sucesso para ${getMonthLabel(targetPostponeMonth)}!`);
     setTimeout(() => setSavedSuccessMsg(null), 4000);
   };
@@ -1189,6 +1195,36 @@ export const MonthlyClosingTab: React.FC = () => {
                 <p className="text-[11px] text-zinc-400 leading-relaxed">
                   Ao postegar, esta obrigação será movida para o mês selecionado, alterando suas previsões de caixa naquele mês. Quando o mês planejado chegar, ela reaparecerá para confirmação ou novo reagendamento.
                 </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="font-semibold text-zinc-200 block text-[11px]">
+                    Taxa de Juros de Atraso (Opcional):
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    placeholder="Ex: 1.5"
+                    value={postponeInterestRate}
+                    onChange={(e) => setPostponeInterestRate(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-700 text-white font-mono-numbers text-xs outline-none focus:border-amber-500"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="font-semibold text-zinc-200 block text-[11px]">
+                    Incidência dos Juros:
+                  </label>
+                  <select
+                    value={postponeInterestType}
+                    onChange={(e) => setPostponeInterestType(e.target.value as 'daily' | 'monthly')}
+                    className="w-full px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-700 text-white text-xs outline-none focus:border-amber-500 font-medium"
+                  >
+                    <option value="monthly">Ao Mês (% a.m.)</option>
+                    <option value="daily">Ao Dia (% a.d.)</option>
+                  </select>
+                </div>
               </div>
 
               <div className="flex items-center justify-end gap-2 pt-2 border-t border-zinc-800">

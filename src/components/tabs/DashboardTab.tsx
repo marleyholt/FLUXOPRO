@@ -198,6 +198,8 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
   }
 
   const futureDebts: DebtItem[] = [];
+  const trackedSubItemIds = new Set<string>();
+  const trackedTitles = new Set<string>();
 
   // 1. Debt from expense installments (Loans, financing)
   data.expenses
@@ -207,6 +209,8 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
       if (inst.isActive) {
         const remaining = exp.installmentsCount! - inst.current + 1;
         const endMonth = addMonths(exp.startMonth, exp.installmentsCount! - 1);
+        if (exp.linkedSubItemId) trackedSubItemIds.add(exp.linkedSubItemId);
+        trackedTitles.add(exp.title.trim().toLowerCase());
         futureDebts.push({
           id: exp.id,
           title: exp.title,
@@ -229,6 +233,8 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
       if (inst.isActive) {
         const remaining = tx.totalInstallments - inst.current + 1;
         const endMonth = addMonths(tx.startMonth, tx.totalInstallments - 1);
+        if (tx.linkedSubItemId) trackedSubItemIds.add(tx.linkedSubItemId);
+        trackedTitles.add(tx.description.trim().toLowerCase());
         futureDebts.push({
           id: tx.id,
           title: tx.description,
@@ -242,23 +248,50 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
       }
     });
 
-  // 3. Pushed Debts from Monthly Closings (alimenta projeção de dívidas)
-  Object.values(data.monthlyClosings || {}).forEach((closing) => {
-    (closing.pushedDebts || [])
-      .filter((p) => p.status === 'pushed')
-      .forEach((p) => {
-        futureDebts.push({
-          id: p.id,
-          title: `[Empurrada] ${p.expenseTitle}`,
-          origin: `Fechamento ${closing.month} (${p.reason || 'Pagar quando der'})`,
-          scope: 'PF',
-          monthlyAmount: p.amount,
-          remainingInstallments: 1,
-          totalRemainingDebt: p.amount,
-          endMonth: 'Pendente',
+  // 3. Debt/Obligations ONLY from category "Financiamento | Dívidas" subitems (if not already tracked by expenses or card transactions)
+  data.budgetEnvelopes.forEach((env) => {
+    const envNameLower = env.name.trim().toLowerCase();
+    if (envNameLower.includes('financiamento') || envNameLower.includes('dívidas') || envNameLower === 'financiamento | dívidas') {
+      if (env.subItems && env.subItems.length > 0) {
+        env.subItems.forEach((sub) => {
+          // If already tracked by an installment expense or card transaction, skip to avoid duplication!
+          if (trackedSubItemIds.has(sub.id) || trackedTitles.has(sub.name.trim().toLowerCase())) {
+            return;
+          }
+
+          // If sub.endMonth is set and selectedMonth > sub.endMonth, skip
+          if (sub.endMonth && getMonthDiff(sub.endMonth, selectedMonth) > 0) {
+            return;
+          }
+          // Project 12 months ahead by default, or until sub.endMonth if defined earlier
+          let remainingMonths = 12;
+          if (sub.endMonth) {
+            const diff = getMonthDiff(selectedMonth, sub.endMonth) + 1;
+            if (diff > 0 && diff < 12) {
+              remainingMonths = diff;
+            }
+          }
+          if (remainingMonths <= 0) return;
+
+          const totalRemaining = sub.amount * remainingMonths;
+          const endMonth = sub.endMonth || addMonths(selectedMonth, 11);
+
+          futureDebts.push({
+            id: sub.id,
+            title: sub.name,
+            origin: env.name,
+            scope: 'PF',
+            monthlyAmount: sub.amount,
+            remainingInstallments: remainingMonths,
+            totalRemainingDebt: totalRemaining,
+            endMonth,
+          });
         });
-      });
+      }
+    }
   });
+
+
 
   const totalFutureDebt = futureDebts.reduce((acc, curr) => acc + curr.totalRemainingDebt, 0);
 
@@ -871,6 +904,92 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
             )}
           </ResponsiveContainer>
         </div>
+      </div>
+
+      {/* Projeção de dívidas e contas atrasadas (Postergadas) */}
+      <div className="p-5 rounded-2xl bg-zinc-900/90 border border-zinc-800/80 shadow-sm space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-zinc-800 pb-3">
+          <div>
+            <h3 className="text-sm font-bold text-white flex items-center gap-2">
+              <Clock className="w-4 h-4 text-amber-400" />
+              Projeção de Dívidas e Contas Atrasadas (Postergadas)
+            </h3>
+            <p className="text-xs text-zinc-400">
+              Contas e obrigações reagendadas com projeção de juros e encargos de atraso
+            </p>
+          </div>
+          <span className="font-mono-numbers font-bold text-amber-400 text-xs">
+            Total Geral Acumulado: {formatBRL(
+              Object.values(data.monthlyClosings || {})
+                .flatMap((c) => c.pushedDebts || [])
+                .filter((p) => p.status === 'pushed')
+                .reduce((acc, p) => {
+                  const rate = p.interestRate || 0;
+                  const intType = p.interestType || 'monthly';
+                  const monthsDiff = Math.max(1, getMonthDiff(p.month, p.targetMonth));
+                  const daysDiff = monthsDiff * 30;
+                  const projectedInterest = rate > 0
+                    ? intType === 'monthly'
+                      ? p.amount * (rate / 100) * monthsDiff
+                      : p.amount * (rate / 100) * daysDiff
+                    : 0;
+                  return acc + p.amount + projectedInterest;
+                }, 0)
+            )}
+          </span>
+        </div>
+
+        {activePushedDebts.length === 0 ? (
+          <div className="p-6 text-center text-xs text-zinc-400 bg-zinc-950/60 rounded-xl border border-zinc-800">
+            Nenhuma despesa ou conta postergada no momento.
+          </div>
+        ) : (
+          <div className="border border-zinc-800 rounded-xl overflow-hidden bg-zinc-950 max-h-64 overflow-y-auto">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead className="bg-zinc-900/90 text-zinc-400 sticky top-0 border-b border-zinc-800 z-10 font-semibold">
+                <tr>
+                  <th className="py-2.5 px-3">Compromisso</th>
+                  <th className="py-2.5 px-3">Mês Origem → Destino</th>
+                  <th className="py-2.5 px-3 text-right">Valor Original</th>
+                  <th className="py-2.5 px-3 text-right">Projeção de Juros</th>
+                  <th className="py-2.5 px-3 text-right">Total por Linha</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-900">
+                {activePushedDebts.map((p) => {
+                  const rate = p.interestRate || 0;
+                  const intType = p.interestType || 'monthly';
+                  const monthsDiff = Math.max(1, getMonthDiff(p.month, p.targetMonth));
+                  const daysDiff = monthsDiff * 30;
+                  const projectedInterest = rate > 0
+                    ? intType === 'monthly'
+                      ? p.amount * (rate / 100) * monthsDiff
+                      : p.amount * (rate / 100) * daysDiff
+                    : 0;
+                  const rowTotal = p.amount + projectedInterest;
+
+                  return (
+                    <tr key={p.id} className="hover:bg-zinc-900/40 text-zinc-300">
+                      <td className="py-2 px-3 font-semibold text-white">{p.expenseTitle}</td>
+                      <td className="py-2 px-3 text-zinc-400">
+                        {getMonthLabel(p.month)} → <strong className="text-amber-400">{getMonthLabel(p.targetMonth)}</strong>
+                      </td>
+                      <td className="py-2 px-3 text-right font-mono-numbers text-zinc-200">
+                        {formatBRL(p.amount)}
+                      </td>
+                      <td className="py-2 px-3 text-right font-mono-numbers text-amber-400">
+                        {rate > 0 ? `+${formatBRL(projectedInterest)} (${rate}% ${intType === 'monthly' ? 'a.m.' : 'a.d.'})` : 'R$ 0,00'}
+                      </td>
+                      <td className="py-2 px-3 text-right font-mono-numbers font-bold text-white">
+                        {formatBRL(rowTotal)}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* Projeção da Dívida e Rastreabilidade */}

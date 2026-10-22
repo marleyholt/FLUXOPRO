@@ -28,7 +28,7 @@ import {
   Filter,
 } from 'lucide-react';
 import { useFinance } from '../../context/FinanceContext';
-import { formatBRL, getMonthDiff, getInstallmentInfo } from '../../utils/calculations';
+import { formatBRL, getMonthDiff, getInstallmentInfo, getMonthLabel } from '../../utils/calculations';
 import { Expense, VariableExpenseLog } from '../../types/finance';
 
 interface MonthlyControlTabProps {
@@ -88,7 +88,7 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
   } | null>(null);
   const [editingSubItem, setEditingSubItem] = useState<{
     categoryId: string;
-    subItem: { id: string; name: string; amount: number };
+    subItem: { id: string; name: string; amount: number; endMonth?: string };
   } | null>(null);
 
   // In-app deletion confirmation (never uses window.confirm which is blocked in iframes)
@@ -1024,7 +1024,7 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
                                               onClick={() =>
                                                 setEditingSubItem({
                                                   categoryId: env.id,
-                                                  subItem: { id: sub.id, name: sub.name, amount: sub.amount },
+                                                  subItem: { id: sub.id, name: sub.name, amount: sub.amount, endMonth: sub.endMonth },
                                                 })
                                               }
                                               className="font-semibold text-zinc-300 hover:text-emerald-400 hover:underline transition cursor-pointer inline-flex items-center gap-1"
@@ -1818,6 +1818,42 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
                 />
               </div>
 
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-zinc-300">Encerrar projeção em:</label>
+                <select
+                  value={editingSubItem.subItem.endMonth || ''}
+                  onChange={(e) =>
+                    setEditingSubItem({
+                      ...editingSubItem,
+                      subItem: { ...editingSubItem.subItem, endMonth: e.target.value || undefined },
+                    })
+                  }
+                  className="w-full px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-700 text-xs text-white outline-none focus:border-emerald-500 font-mono-numbers font-bold"
+                >
+                  <option value="">(Sem encerramento - Recorrente eterno)</option>
+                  {(() => {
+                    const months: { value: string; label: string }[] = [];
+                    const baseDate = new Date();
+                    baseDate.setMonth(baseDate.getMonth() - 12);
+                    for (let i = 0; i < 48; i++) {
+                      const y = baseDate.getFullYear();
+                      const m = String(baseDate.getMonth() + 1).padStart(2, '0');
+                      const val = `${y}-${m}`;
+                      months.push({ value: val, label: getMonthLabel(val) });
+                      baseDate.setMonth(baseDate.getMonth() + 1);
+                    }
+                    return months.map((m) => (
+                      <option key={m.value} value={m.value}>
+                        {m.label} ({m.value})
+                      </option>
+                    ));
+                  })()}
+                </select>
+                <span className="text-[10px] text-zinc-400 block">
+                  Selecione o último mês em que esta projeção ocorre (opcional). Após este mês, a projeção cessa.
+                </span>
+              </div>
+
               <div className="flex items-center justify-end gap-2 pt-2 border-t border-zinc-800">
                 <button
                   type="button"
@@ -1828,6 +1864,18 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
                 </button>
                 <button
                   type="submit"
+                  onClick={() => {
+                    const parsed = parseFloat(editingSubItem.subItem.amount as any);
+                    if (!editingSubItem.subItem.name.trim() || isNaN(parsed) || parsed < 0) return;
+                    updateBudgetSubItem(
+                      editingSubItem.categoryId,
+                      editingSubItem.subItem.id,
+                      editingSubItem.subItem.name.trim(),
+                      parsed,
+                      editingSubItem.subItem.endMonth
+                    );
+                    setEditingSubItem(null);
+                  }}
                   className="px-4 py-2 rounded-xl text-xs font-bold bg-emerald-500 hover:bg-emerald-400 text-zinc-950 transition shadow"
                 >
                   Salvar Alterações

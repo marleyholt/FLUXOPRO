@@ -86,7 +86,7 @@ interface FinanceContextType {
   updateBudgetEnvelope: (envelopeId: string, name: string, targetAmount: number) => void;
   deleteBudgetEnvelope: (envelopeId: string) => void;
   addBudgetSubItem: (categoryId: string, name: string, amount: number) => void;
-  updateBudgetSubItem: (categoryId: string, subItemId: string, name: string, amount: number) => void;
+  updateBudgetSubItem: (categoryId: string, subItemId: string, name: string, amount: number, endMonth?: string) => void;
   deleteBudgetSubItem: (categoryId: string, subItemId: string) => void;
   markSubItemAsSaved: (subItemId: string, month: string) => void;
 
@@ -127,7 +127,9 @@ interface FinanceContextType {
     targetMonth: string,
     type?: 'expense' | 'card' | 'subitem',
     cardId?: string,
-    reason?: string
+    reason?: string,
+    interestRate?: number,
+    interestType?: 'daily' | 'monthly'
   ) => void;
   resolveScheduledReminder: (month: string, reminderId: string) => void;
   resolvePushedDebt: (month: string, pushedDebtId: string) => void;
@@ -759,11 +761,15 @@ function sanitizeAppData(loaded: AppData): AppData {
   );
 
   const updateBudgetSubItem = useCallback(
-    (categoryId: string, subItemId: string, name: string, amount: number) => {
+    (categoryId: string, subItemId: string, name: string, amount: number, endMonth?: string) => {
       const updatedEnvelopes = data.budgetEnvelopes.map((env) => {
         if (env.id === categoryId) {
           const subItems = env.subItems || [];
-          const newSubItems = subItems.map((s) => s.id === subItemId ? { ...s, name, amount } : s);
+          const newSubItems = subItems.map((s) =>
+            s.id === subItemId
+              ? { ...s, name, amount, endMonth: endMonth?.trim() ? endMonth : undefined }
+              : s
+          );
           const totalTarget = newSubItems.reduce((acc, curr) => acc + curr.amount, 0);
           return {
             ...env,
@@ -1097,7 +1103,9 @@ function sanitizeAppData(loaded: AppData): AppData {
       targetMonth: string,
       type: 'expense' | 'card' | 'subitem' = 'expense',
       cardId?: string,
-      reason?: string
+      reason?: string,
+      interestRate?: number,
+      interestType?: 'daily' | 'monthly'
     ) => {
       const currentClosings = { ...(data.monthlyClosings || {}) };
       const closing = currentClosings[month] || {
@@ -1122,6 +1130,8 @@ function sanitizeAppData(loaded: AppData): AppData {
         status: 'pushed',
         type,
         cardId,
+        interestRate,
+        interestType,
       };
 
       currentClosings[month] = {
