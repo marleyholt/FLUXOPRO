@@ -69,6 +69,12 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
   const [extraAmortizationPushed, setExtraAmortizationPushed] = useState<number>(0);
   const [extraAmortizationFuture, setExtraAmortizationFuture] = useState<number>(0);
 
+  const [pushedSortBy, setPushedSortBy] = useState<'title-asc' | 'title-desc' | 'amount-desc' | 'amount-asc'>('amount-desc');
+  const [selectedPushedIds, setSelectedPushedIds] = useState<Set<string>>(new Set());
+
+  const [futureSortBy, setFutureSortBy] = useState<'title-asc' | 'title-desc' | 'amount-desc' | 'amount-asc'>('amount-desc');
+  const [selectedFutureIds, setSelectedFutureIds] = useState<Set<string>>(new Set());
+
   // Generate available months for rolling forecast start month selector
   const availableMonths: { value: string; label: string }[] = [];
   const baseDate = new Date();
@@ -187,6 +193,14 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
     billsPendingAmount += totalCardsAmount;
   }
 
+  // Scheduled Reminders and Pushed list
+  const activeScheduledReminders = Object.values(data.monthlyClosings || {})
+    .flatMap((c) => c.scheduledReminders || [])
+    .filter((r) => r.status === 'scheduled');
+  const activePushedDebts = Object.values(data.monthlyClosings || {})
+    .flatMap((c) => c.pushedDebts || [])
+    .filter((p) => p.status === 'pushed');
+
   // Future Debt Projection & Traceability
   interface DebtItem {
     id: string;
@@ -261,22 +275,25 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
             return;
           }
 
-          // If sub.endMonth is set and selectedMonth > sub.endMonth, skip
-          if (sub.endMonth && getMonthDiff(sub.endMonth, selectedMonth) > 0) {
-            return;
-          }
-          // Project 12 months ahead by default, or until sub.endMonth if defined earlier
-          let remainingMonths = 12;
+          // If sub.endMonth is not set, it's a one-off debt for this month only (remainingMonths = 1).
+          // If sub.endMonth is set, it projects from selectedMonth until sub.endMonth.
+          let remainingMonths = 1;
+          let endMonth = selectedMonth;
+
           if (sub.endMonth) {
+            if (getMonthDiff(sub.endMonth, selectedMonth) > 0) {
+              return;
+            }
             const diff = getMonthDiff(selectedMonth, sub.endMonth) + 1;
-            if (diff > 0 && diff < 12) {
+            if (diff > 0) {
               remainingMonths = diff;
+              endMonth = sub.endMonth;
+            } else {
+              return;
             }
           }
-          if (remainingMonths <= 0) return;
 
           const totalRemaining = sub.amount * remainingMonths;
-          const endMonth = sub.endMonth || addMonths(selectedMonth, 11);
 
           futureDebts.push({
             id: sub.id,
@@ -297,13 +314,52 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
 
   const totalFutureDebt = futureDebts.reduce((acc, curr) => acc + curr.totalRemainingDebt, 0);
 
-  // Scheduled Reminders and Pushed list
-  const activeScheduledReminders = Object.values(data.monthlyClosings || {})
-    .flatMap((c) => c.scheduledReminders || [])
-    .filter((r) => r.status === 'scheduled');
-  const activePushedDebts = Object.values(data.monthlyClosings || {})
-    .flatMap((c) => c.pushedDebts || [])
-    .filter((p) => p.status === 'pushed');
+  // Sorted & Filtered Pushed Debts
+  const sortedPushedDebts = [...activePushedDebts].sort((a, b) => {
+    const rateA = a.interestRate || 0;
+    const intTypeA = a.interestType || 'monthly';
+    const monthsA = Math.max(1, getMonthDiff(a.month, a.targetMonth));
+    const totalA = a.amount + (rateA > 0 ? (intTypeA === 'monthly' ? a.amount * (rateA/100)*monthsA : a.amount * (rateA/100)*(monthsA*30)) : 0);
+
+    const rateB = b.interestRate || 0;
+    const intTypeB = b.interestType || 'monthly';
+    const monthsB = Math.max(1, getMonthDiff(b.month, b.targetMonth));
+    const totalB = b.amount + (rateB > 0 ? (intTypeB === 'monthly' ? b.amount * (rateB/100)*monthsB : b.amount * (rateB/100)*(monthsB*30)) : 0);
+
+    if (pushedSortBy === 'title-asc') return a.expenseTitle.localeCompare(b.expenseTitle);
+    if (pushedSortBy === 'title-desc') return b.expenseTitle.localeCompare(a.expenseTitle);
+    if (pushedSortBy === 'amount-asc') return totalA - totalB;
+    return totalB - totalA;
+  });
+
+  const selectedPushedTotal = sortedPushedDebts
+    .filter((p) => selectedPushedIds.has(p.id))
+    .reduce((acc, p) => {
+      const rate = p.interestRate || 0;
+      const intType = p.interestType || 'monthly';
+      const monthsDiff = Math.max(1, getMonthDiff(p.month, p.targetMonth));
+      const daysDiff = monthsDiff * 30;
+      const projectedInterest = rate > 0
+        ? intType === 'monthly'
+          ? p.amount * (rate / 100) * monthsDiff
+          : p.amount * (rate / 100) * daysDiff
+        : 0;
+      return acc + p.amount + projectedInterest;
+    }, 0);
+
+  // Sorted & Filtered Future Debts
+  const sortedFutureDebts = [...futureDebts].sort((a, b) => {
+    if (futureSortBy === 'title-asc') return a.title.localeCompare(b.title);
+    if (futureSortBy === 'title-desc') return b.title.localeCompare(a.title);
+    if (futureSortBy === 'amount-asc') return a.totalRemainingDebt - b.totalRemainingDebt;
+    return b.totalRemainingDebt - a.totalRemainingDebt;
+  });
+
+  const selectedFutureTotal = sortedFutureDebts
+    .filter((item) => selectedFutureIds.has(item.id))
+    .reduce((acc, item) => acc + item.totalRemainingDebt, 0);
+
+
 
 
   // Prepare data for 12M Cashflow Area & Composed Chart
@@ -1032,50 +1088,122 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
             Nenhuma despesa ou conta postergada no momento.
           </div>
         ) : (
-          <div className="border border-zinc-800 rounded-xl overflow-hidden bg-zinc-950 max-h-64 overflow-y-auto">
-            <table className="w-full text-left text-xs border-collapse">
-              <thead className="bg-zinc-900/90 text-zinc-400 sticky top-0 border-b border-zinc-800 z-10 font-semibold">
-                <tr>
-                  <th className="py-2.5 px-3">Compromisso</th>
-                  <th className="py-2.5 px-3">Mês Origem → Destino</th>
-                  <th className="py-2.5 px-3 text-right">Valor Original</th>
-                  <th className="py-2.5 px-3 text-right">Projeção de Juros</th>
-                  <th className="py-2.5 px-3 text-right">Total por Linha</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-900">
-                {activePushedDebts.map((p) => {
-                  const rate = p.interestRate || 0;
-                  const intType = p.interestType || 'monthly';
-                  const monthsDiff = Math.max(1, getMonthDiff(p.month, p.targetMonth));
-                  const daysDiff = monthsDiff * 30;
-                  const projectedInterest = rate > 0
-                    ? intType === 'monthly'
-                      ? p.amount * (rate / 100) * monthsDiff
-                      : p.amount * (rate / 100) * daysDiff
-                    : 0;
-                  const rowTotal = p.amount + projectedInterest;
+          <div className="space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-2">
+                <span className="text-zinc-400 font-medium">Ordenar por:</span>
+                <select
+                  value={pushedSortBy}
+                  onChange={(e) => setPushedSortBy(e.target.value as any)}
+                  className="px-2.5 py-1 rounded-lg bg-zinc-950 border border-zinc-700 text-white font-medium outline-none focus:border-amber-500"
+                >
+                  <option value="amount-desc">Maior Valor (↓)</option>
+                  <option value="amount-asc">Menor Valor (↑)</option>
+                  <option value="title-asc">Alfabética (A-Z)</option>
+                  <option value="title-desc">Alfabética (Z-A)</option>
+                </select>
+              </div>
 
-                  return (
-                    <tr key={p.id} className="hover:bg-zinc-900/40 text-zinc-300">
-                      <td className="py-2 px-3 font-semibold text-white">{p.expenseTitle}</td>
-                      <td className="py-2 px-3 text-zinc-400">
-                        {getMonthLabel(p.month)} → <strong className="text-amber-400">{getMonthLabel(p.targetMonth)}</strong>
-                      </td>
-                      <td className="py-2 px-3 text-right font-mono-numbers text-zinc-200">
-                        {formatBRL(p.amount)}
-                      </td>
-                      <td className="py-2 px-3 text-right font-mono-numbers text-amber-400">
-                        {rate > 0 ? `+${formatBRL(projectedInterest)} (${rate}% ${intType === 'monthly' ? 'a.m.' : 'a.d.'})` : 'R$ 0,00'}
-                      </td>
-                      <td className="py-2 px-3 text-right font-mono-numbers font-bold text-white">
-                        {formatBRL(rowTotal)}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+              {selectedPushedIds.size > 0 && (
+                <div className="text-amber-300 font-bold bg-amber-500/10 border border-amber-500/30 px-3 py-1 rounded-lg flex items-center gap-2">
+                  <span>Selecionadas: {selectedPushedIds.size} linha(s)</span>
+                  <span>•</span>
+                  <span>Soma Selecionada: {formatBRL(selectedPushedTotal)}</span>
+                  <button
+                    onClick={() => setSelectedPushedIds(new Set())}
+                    className="text-zinc-400 hover:text-white ml-2 text-[10px] underline"
+                  >
+                    Limpar
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <div className="border border-zinc-800 rounded-xl overflow-hidden bg-zinc-950 max-h-64 overflow-y-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead className="bg-zinc-900/90 text-zinc-400 sticky top-0 border-b border-zinc-800 z-10 font-semibold">
+                  <tr>
+                    <th className="py-2.5 px-3 w-10 text-center">
+                      <input
+                        type="checkbox"
+                        checked={selectedPushedIds.size === sortedPushedDebts.length && sortedPushedDebts.length > 0}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedPushedIds(new Set(sortedPushedDebts.map((p) => p.id)));
+                          } else {
+                            setSelectedPushedIds(new Set());
+                          }
+                        }}
+                        className="rounded bg-zinc-900 border-zinc-700 text-amber-500 focus:ring-0 cursor-pointer"
+                        title="Selecionar todas"
+                      />
+                    </th>
+                    <th className="py-2.5 px-3">Compromisso</th>
+                    <th className="py-2.5 px-3">Mês Origem → Destino</th>
+                    <th className="py-2.5 px-3 text-right">Valor Original</th>
+                    <th className="py-2.5 px-3 text-right">Projeção de Juros</th>
+                    <th className="py-2.5 px-3 text-right">Total por Linha</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-900">
+                  {sortedPushedDebts.map((p) => {
+                    const rate = p.interestRate || 0;
+                    const intType = p.interestType || 'monthly';
+                    const monthsDiff = Math.max(1, getMonthDiff(p.month, p.targetMonth));
+                    const daysDiff = monthsDiff * 30;
+                    const projectedInterest = rate > 0
+                      ? intType === 'monthly'
+                        ? p.amount * (rate / 100) * monthsDiff
+                        : p.amount * (rate / 100) * daysDiff
+                      : 0;
+                    const rowTotal = p.amount + projectedInterest;
+                    const isSelected = selectedPushedIds.has(p.id);
+
+                    return (
+                      <tr
+                        key={p.id}
+                        onClick={() => {
+                          const next = new Set(selectedPushedIds);
+                          if (isSelected) next.delete(p.id);
+                          else next.add(p.id);
+                          setSelectedPushedIds(next);
+                        }}
+                        className={`hover:bg-zinc-900/50 text-zinc-300 cursor-pointer transition ${
+                          isSelected ? 'bg-amber-500/10' : ''
+                        }`}
+                      >
+                        <td className="py-2 px-3 text-center" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={(e) => {
+                              const next = new Set(selectedPushedIds);
+                              if (e.target.checked) next.add(p.id);
+                              else next.delete(p.id);
+                              setSelectedPushedIds(next);
+                            }}
+                            className="rounded bg-zinc-900 border-zinc-700 text-amber-500 focus:ring-0 cursor-pointer"
+                          />
+                        </td>
+                        <td className="py-2 px-3 font-semibold text-white">{p.expenseTitle}</td>
+                        <td className="py-2 px-3 text-zinc-400">
+                          {getMonthLabel(p.month)} → <strong className="text-amber-400">{getMonthLabel(p.targetMonth)}</strong>
+                        </td>
+                        <td className="py-2 px-3 text-right font-mono-numbers text-zinc-200">
+                          {formatBRL(p.amount)}
+                        </td>
+                        <td className="py-2 px-3 text-right font-mono-numbers text-amber-400">
+                          {rate > 0 ? `+${formatBRL(projectedInterest)} (${rate}% ${intType === 'monthly' ? 'a.m.' : 'a.d.'})` : 'R$ 0,00'}
+                        </td>
+                        <td className="py-2 px-3 text-right font-mono-numbers font-bold text-white">
+                          {formatBRL(rowTotal)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
       </div>
@@ -1179,45 +1307,119 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
             Nenhuma dívida ou compra parcelada ativa cadastrada no momento.
           </div>
         ) : (
-          <div className="border border-zinc-800 rounded-xl overflow-hidden bg-zinc-950 max-h-64 overflow-y-auto">
-            <table className="w-full text-left text-xs border-collapse">
-              <thead className="bg-zinc-900/90 text-zinc-400 sticky top-0 border-b border-zinc-800 z-10 font-semibold">
-                <tr>
-                  <th className="py-2.5 px-3">Compromisso</th>
-                  <th className="py-2.5 px-3">Origem</th>
-                  <th className="py-2.5 px-3">Escopo</th>
-                  <th className="py-2.5 px-3 text-right">Parcela Mensal</th>
-                  <th className="py-2.5 px-3 text-center">Restantes</th>
-                  <th className="py-2.5 px-3">Término</th>
-                  <th className="py-2.5 px-3 text-right">Saldo Devedor</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-900">
-                {futureDebts.map((item) => (
-                  <tr key={item.id} className="hover:bg-zinc-900/40 text-zinc-300">
-                    <td className="py-2 px-3 font-semibold text-white">{item.title}</td>
-                    <td className="py-2 px-3 text-zinc-400">{item.origin}</td>
-                    <td className="py-2 px-3">
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-300 font-bold">
-                        {item.scope}
-                      </span>
-                    </td>
-                    <td className="py-2 px-3 text-right font-mono-numbers text-zinc-200">
-                      {formatBRL(item.monthlyAmount)}
-                    </td>
-                    <td className="py-2 px-3 text-center font-mono-numbers font-semibold text-indigo-400">
-                      {item.remainingInstallments}x
-                    </td>
-                    <td className="py-2 px-3 font-semibold text-emerald-400">
-                      {getMonthLabel(item.endMonth)}
-                    </td>
-                    <td className="py-2 px-3 text-right font-mono-numbers font-bold text-white">
-                      {formatBRL(item.totalRemainingDebt)}
-                    </td>
+          <div className="space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-2">
+                <span className="text-zinc-400 font-medium">Ordenar por:</span>
+                <select
+                  value={futureSortBy}
+                  onChange={(e) => setFutureSortBy(e.target.value as any)}
+                  className="px-2.5 py-1 rounded-lg bg-zinc-950 border border-zinc-700 text-white font-medium outline-none focus:border-emerald-500"
+                >
+                  <option value="amount-desc">Maior Saldo Devedor (↓)</option>
+                  <option value="amount-asc">Menor Saldo Devedor (↑)</option>
+                  <option value="title-asc">Alfabética (A-Z)</option>
+                  <option value="title-desc">Alfabética (Z-A)</option>
+                </select>
+              </div>
+
+              {selectedFutureIds.size > 0 && (
+                <div className="text-emerald-300 font-bold bg-emerald-500/10 border border-emerald-500/30 px-3 py-1 rounded-lg flex items-center gap-2">
+                  <span>Selecionadas: {selectedFutureIds.size} linha(s)</span>
+                  <span>•</span>
+                  <span>Soma Selecionada: {formatBRL(selectedFutureTotal)}</span>
+                  <button
+                    onClick={() => setSelectedFutureIds(new Set())}
+                    className="text-zinc-400 hover:text-white ml-2 text-[10px] underline"
+                  >
+                    Limpar
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <div className="border border-zinc-800 rounded-xl overflow-hidden bg-zinc-950 max-h-64 overflow-y-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead className="bg-zinc-900/90 text-zinc-400 sticky top-0 border-b border-zinc-800 z-10 font-semibold">
+                  <tr>
+                    <th className="py-2.5 px-3 w-10 text-center">
+                      <input
+                        type="checkbox"
+                        checked={selectedFutureIds.size === sortedFutureDebts.length && sortedFutureDebts.length > 0}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedFutureIds(new Set(sortedFutureDebts.map((item) => item.id)));
+                          } else {
+                            setSelectedFutureIds(new Set());
+                          }
+                        }}
+                        className="rounded bg-zinc-900 border-zinc-700 text-emerald-500 focus:ring-0 cursor-pointer"
+                        title="Selecionar todas"
+                      />
+                    </th>
+                    <th className="py-2.5 px-3">Compromisso</th>
+                    <th className="py-2.5 px-3">Origem</th>
+                    <th className="py-2.5 px-3">Escopo</th>
+                    <th className="py-2.5 px-3 text-right">Parcela Mensal</th>
+                    <th className="py-2.5 px-3 text-center">Restantes</th>
+                    <th className="py-2.5 px-3">Término</th>
+                    <th className="py-2.5 px-3 text-right">Saldo Devedor</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-zinc-900">
+                  {sortedFutureDebts.map((item) => {
+                    const isSelected = selectedFutureIds.has(item.id);
+                    return (
+                      <tr
+                        key={item.id}
+                        onClick={() => {
+                          const next = new Set(selectedFutureIds);
+                          if (isSelected) next.delete(item.id);
+                          else next.add(item.id);
+                          setSelectedFutureIds(next);
+                        }}
+                        className={`hover:bg-zinc-900/50 text-zinc-300 cursor-pointer transition ${
+                          isSelected ? 'bg-emerald-500/10' : ''
+                        }`}
+                      >
+                        <td className="py-2 px-3 text-center" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={(e) => {
+                              const next = new Set(selectedFutureIds);
+                              if (e.target.checked) next.add(item.id);
+                              else next.delete(item.id);
+                              setSelectedFutureIds(next);
+                            }}
+                            className="rounded bg-zinc-900 border-zinc-700 text-emerald-500 focus:ring-0 cursor-pointer"
+                          />
+                        </td>
+                        <td className="py-2 px-3 font-semibold text-white">{item.title}</td>
+                        <td className="py-2 px-3 text-zinc-400">{item.origin}</td>
+                        <td className="py-2 px-3">
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-300 font-bold">
+                            {item.scope}
+                          </span>
+                        </td>
+                        <td className="py-2 px-3 text-right font-mono-numbers text-zinc-200">
+                          {formatBRL(item.monthlyAmount)}
+                        </td>
+                        <td className="py-2 px-3 text-center font-mono-numbers font-semibold text-indigo-400">
+                          {item.remainingInstallments}x
+                        </td>
+                        <td className="py-2 px-3 font-semibold text-emerald-400">
+                          {getMonthLabel(item.endMonth)}
+                        </td>
+                        <td className="py-2 px-3 text-right font-mono-numbers font-bold text-white">
+                          {formatBRL(item.totalRemainingDebt)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
       </div>
