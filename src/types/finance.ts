@@ -154,7 +154,7 @@ export interface PushedDebtBill {
   pushedAt: string;
   reason?: string;
   status: 'pushed' | 'paid';
-  type?: 'expense' | 'card';
+  type?: 'expense' | 'card' | 'subitem';
   cardId?: string;
 }
 

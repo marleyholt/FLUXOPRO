@@ -124,7 +124,7 @@ interface FinanceContextType {
     amount: number,
     month: string,
     targetMonth: string,
-    type?: 'expense' | 'card',
+    type?: 'expense' | 'card' | 'subitem',
     cardId?: string,
     reason?: string
   ) => void;
@@ -1082,7 +1082,7 @@ function sanitizeAppData(loaded: AppData): AppData {
       amount: number,
       month: string,
       targetMonth: string,
-      type: 'expense' | 'card' = 'expense',
+      type: 'expense' | 'card' | 'subitem' = 'expense',
       cardId?: string,
       reason?: string
     ) => {

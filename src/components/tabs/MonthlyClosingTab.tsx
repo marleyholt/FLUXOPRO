@@ -58,6 +58,7 @@ export const MonthlyClosingTab: React.FC = () => {
     pushBillDebt,
     resolvePushedDebt,
     setCardRealInvoice,
+    addVariableExpenseLog,
   } = useFinance();
 
   const isClosed = isMonthClosed(selectedMonth);
@@ -125,7 +126,7 @@ export const MonthlyClosingTab: React.FC = () => {
     title: string;
     amount: number;
     month: string;
-    type: 'expense' | 'card';
+    type: 'expense' | 'card' | 'subitem';
     cardId?: string;
   } | null>(null);
   const [targetPostponeMonth, setTargetPostponeMonth] = useState<string>(addMonths(selectedMonth, 1));
@@ -198,10 +199,12 @@ export const MonthlyClosingTab: React.FC = () => {
     month: string;
     monthLabel: string;
     installmentText?: string;
-    type: 'expense' | 'card';
+    type: 'expense' | 'card' | 'subitem';
     cardId?: string;
     isPushed?: boolean;
     targetMonth?: string;
+    envelopeId?: string;
+    subItemId?: string;
   }
 
   const pastUnpaidBills: PastUnpaidBill[] = [];
@@ -315,6 +318,70 @@ export const MonthlyClosingTab: React.FC = () => {
           });
         }
       }
+    });
+  });
+
+  // 4. Unpaid or partial budget envelope subitems from past months
+  data.budgetEnvelopes.forEach((env) => {
+    (env.subItems || []).forEach((sub) => {
+      pastMonths.forEach((pastM) => {
+        const lowerName = env.name.trim().toLowerCase();
+        const linkedLogs = data.variableExpenseLogs.filter(
+          (l) =>
+            l.month === pastM &&
+            (l.categoryId === env.id || l.categoryId.trim().toLowerCase() === lowerName) &&
+            l.linkedSubItemId === sub.id
+        );
+        const linkedCardTxs = data.cardTransactions.filter((tx) => {
+          if (tx.isPaused) return false;
+          const matchesCategory =
+            tx.category.trim().toLowerCase() === lowerName || tx.category === env.id;
+          if (!matchesCategory || tx.linkedSubItemId !== sub.id) return false;
+
+          if (tx.type === 'recurring') {
+            return getMonthDiff(tx.startMonth, pastM) >= 0;
+          } else if (tx.type === 'installment') {
+            return getInstallmentInfo(tx.startMonth, tx.totalInstallments, pastM).isActive;
+          } else if (tx.type === 'single') {
+            return tx.startMonth === pastM;
+          }
+          return false;
+        });
+
+        const spentOnSub =
+          linkedLogs.reduce((acc, l) => acc + l.amount, 0) +
+          linkedCardTxs.reduce((acc, t) => acc + t.installmentAmount, 0);
+
+        const diff = sub.amount - spentOnSub;
+        if (sub.amount > 0 && spentOnSub < sub.amount) {
+          const openAmount = sub.amount - spentOnSub;
+          const alreadyAdded = pastUnpaidBills.some(
+            (b) => b.subItemId === sub.id && b.month === pastM
+          );
+          const isAlreadyPushed = Object.values(data.monthlyClosings || {}).some((closing) =>
+            (closing.pushedDebts || []).some(
+              (pd) => pd.expenseId === sub.id && pd.month === pastM && pd.status === 'pushed'
+            )
+          );
+
+          if (!alreadyAdded && !isAlreadyPushed) {
+            pastUnpaidBills.push({
+              id: `subitem-${sub.id}-${pastM}`,
+              expenseId: sub.id,
+              title: `${env.name} — ${sub.name}`,
+              amount: openAmount,
+              category: `Envelope: ${env.name}`,
+              scope: 'PJ',
+              month: pastM,
+              monthLabel: `${getMonthLabel(pastM)} (${spentOnSub === 0 ? 'Pendente' : 'Parcial'})`,
+              installmentText: spentOnSub > 0 ? `Pago: ${formatBRL(spentOnSub)} / Prev: ${formatBRL(sub.amount)}` : `Previsto: ${formatBRL(sub.amount)}`,
+              type: 'subitem',
+              envelopeId: env.id,
+              subItemId: sub.id,
+            });
+          }
+        }
+      });
     });
   });
 
@@ -917,6 +984,15 @@ export const MonthlyClosingTab: React.FC = () => {
                               setCardRealInvoice(item.cardId, item.month, item.amount, undefined, 'paid_on_time');
                             } else if (item.isPushed) {
                               resolvePushedDebt(item.month, item.id);
+                            } else if (item.type === 'subitem' && item.envelopeId && item.subItemId) {
+                              addVariableExpenseLog({
+                                categoryId: item.envelopeId,
+                                month: item.month,
+                                amount: item.amount,
+                                description: `${item.title} (Quitado Retroativamente)`,
+                                date: `${item.month}-15`,
+                                linkedSubItemId: item.subItemId,
+                              });
                             } else {
                               toggleExpensePaid(item.expenseId, item.month);
                             }
