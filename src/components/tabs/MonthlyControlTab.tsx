@@ -88,7 +88,7 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
   } | null>(null);
   const [editingSubItem, setEditingSubItem] = useState<{
     categoryId: string;
-    subItem: { id: string; name: string; amount: number; endMonth?: string };
+    subItem: { id: string; name: string; amount: number; startMonth?: string; endMonth?: string };
   } | null>(null);
 
   // In-app deletion confirmation (never uses window.confirm which is blocked in iframes)
@@ -810,9 +810,14 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
 
                   const totalSpent = activeExpensesSum + logsTotal + cardTotalForEnv;
 
-                  // Teto = (soma dos subitens ou env.targetAmount) + soma das contas fixas da categoria
+                  // Teto = (soma dos subitens ativos para selectedMonth ou env.targetAmount) + soma das contas fixas da categoria
+                  const activeSubItems = (env.subItems || []).filter((sub: any) => {
+                    if (sub.startMonth && getMonthDiff(sub.startMonth, selectedMonth) < 0) return false;
+                    if (sub.endMonth && getMonthDiff(selectedMonth, sub.endMonth) < 0) return false;
+                    return true;
+                  });
                   const subItemsSum = env.subItems && env.subItems.length > 0
-                    ? env.subItems.reduce((acc: number, curr: any) => acc + curr.amount, 0)
+                    ? activeSubItems.reduce((acc: number, curr: any) => acc + curr.amount, 0)
                     : 0;
                   const baseTarget = env.subItems && env.subItems.length > 0 ? subItemsSum : env.targetAmount;
                   const target = baseTarget + activeExpensesSum;
@@ -983,32 +988,59 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
                                 const isPaidFull = diff === 0 && spentOnSub > 0;
                                 const isPartial = spentOnSub > 0 && diff > 0;
                                 const isUnpaid = spentOnSub === 0;
+                                const isInactiveThisMonth =
+                                  (sub.startMonth && getMonthDiff(sub.startMonth, selectedMonth) < 0) ||
+                                  (sub.endMonth && getMonthDiff(selectedMonth, sub.endMonth) < 0);
 
                                 return (
                                   <div
                                     key={sub.id}
-                                    className="p-3 rounded-xl bg-zinc-950/90 border border-zinc-800/90 space-y-2 hover:border-zinc-700 transition"
+                                    className={`p-3 rounded-xl border space-y-2 transition ${
+                                      isInactiveThisMonth
+                                        ? 'bg-zinc-950/40 border-zinc-850 opacity-60'
+                                        : 'bg-zinc-950/90 border-zinc-800/90 hover:border-zinc-700'
+                                    }`}
                                   >
                                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                                      <div className="flex items-center gap-2">
-                                        <span className="font-bold text-zinc-100 text-xs">{sub.name}</span>
-                                        {/* Status Badge */}
-                                        {isPaidFull && (
+                                      <div className="flex flex-wrap items-center gap-1.5">
+                                        <span className={`font-bold text-xs ${isInactiveThisMonth ? 'text-zinc-400' : 'text-zinc-100'}`}>
+                                          {sub.name}
+                                        </span>
+
+                                        {/* Tag de Vigência */}
+                                        {(sub.startMonth || sub.endMonth) && (
+                                          <span className="text-[10px] text-zinc-400 bg-zinc-900 px-1.5 py-0.5 rounded border border-zinc-800">
+                                            📅 {sub.startMonth && sub.endMonth
+                                              ? `${getMonthLabel(sub.startMonth)} até ${getMonthLabel(sub.endMonth)}`
+                                              : sub.startMonth
+                                              ? `A partir de ${getMonthLabel(sub.startMonth)}`
+                                              : `Até ${getMonthLabel(sub.endMonth)}`}
+                                          </span>
+                                        )}
+
+                                        {isInactiveThisMonth && (
+                                          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-zinc-800 text-zinc-400 border border-zinc-700">
+                                            Fora da vigência em {getMonthLabel(selectedMonth)}
+                                          </span>
+                                        )}
+
+                                        {/* Status Badge quando ativo */}
+                                        {!isInactiveThisMonth && isPaidFull && (
                                           <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1">
                                             <CheckCircle2 className="w-3 h-3 text-emerald-400" /> Quitado Integral
                                           </span>
                                         )}
-                                        {isPartial && (
+                                        {!isInactiveThisMonth && isPartial && (
                                           <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
                                             🟡 Parcial (Resta: {formatBRL(diff)})
                                           </span>
                                         )}
-                                        {isOver && (
+                                        {!isInactiveThisMonth && isOver && (
                                           <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40">
                                             🔴 Estourado (+{formatBRL(Math.abs(diff))})
                                           </span>
                                         )}
-                                        {isUnpaid && (
+                                        {!isInactiveThisMonth && isUnpaid && (
                                           <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-zinc-800 text-zinc-400 border border-zinc-700">
                                             ⏳ Pendente
                                           </span>
@@ -1024,11 +1056,17 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
                                               onClick={() =>
                                                 setEditingSubItem({
                                                   categoryId: env.id,
-                                                  subItem: { id: sub.id, name: sub.name, amount: sub.amount, endMonth: sub.endMonth },
+                                                  subItem: {
+                                                    id: sub.id,
+                                                    name: sub.name,
+                                                    amount: sub.amount,
+                                                    startMonth: sub.startMonth,
+                                                    endMonth: sub.endMonth,
+                                                  },
                                                 })
                                               }
                                               className="font-semibold text-zinc-300 hover:text-emerald-400 hover:underline transition cursor-pointer inline-flex items-center gap-1"
-                                              title="Clique para editar o valor previsto"
+                                              title="Clique para editar o valor previsto e as datas de vigência"
                                             >
                                               <span>{formatBRL(sub.amount)}</span>
                                               <Edit2 className="w-2.5 h-2.5 opacity-60" />
@@ -1149,7 +1187,7 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
                                 const input = subItemInputs[env.id] || { name: '', amount: '' };
                                 const amt = parseFloat(input.amount);
                                 if (!input.name.trim() || isNaN(amt) || amt <= 0) return;
-                                addBudgetSubItem(env.id, input.name.trim(), amt);
+                                addBudgetSubItem(env.id, input.name.trim(), amt, selectedMonth);
                                 setSubItemInputs({ ...subItemInputs, [env.id]: { name: '', amount: '' } });
                               }}
                               className="flex flex-col sm:flex-row items-center gap-2 pt-2 border-t border-zinc-800/60"
@@ -1779,7 +1817,9 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
                   editingSubItem.categoryId,
                   editingSubItem.subItem.id,
                   editingSubItem.subItem.name.trim(),
-                  parsed
+                  parsed,
+                  editingSubItem.subItem.endMonth,
+                  editingSubItem.subItem.startMonth
                 );
                 setEditingSubItem(null);
               }}
@@ -1818,15 +1858,121 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
                 />
               </div>
 
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-zinc-300">Encerrar projeção em (Mês / Ano):</label>
+              {/* Iniciar Projeção Em (Mês / Ano) */}
+              <div className="space-y-1.5 pt-1 border-t border-zinc-900">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-medium text-zinc-300">Iniciar projeção em (Mês / Ano):</label>
+                  {editingSubItem.subItem.startMonth && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setEditingSubItem({
+                          ...editingSubItem,
+                          subItem: { ...editingSubItem.subItem, startMonth: undefined },
+                        })
+                      }
+                      className="text-[10px] text-zinc-500 hover:text-amber-400"
+                    >
+                      Limpar início
+                    </button>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <select
+                    value={editingSubItem.subItem.startMonth ? editingSubItem.subItem.startMonth.split('-')[1] || '' : ''}
+                    onChange={(e) => {
+                      const m = e.target.value;
+                      const currentYearPart = editingSubItem.subItem.startMonth
+                        ? editingSubItem.subItem.startMonth.split('-')[0]
+                        : selectedMonth.split('-')[0] || String(new Date().getFullYear());
+                      const newStart = m ? `${currentYearPart}-${m}` : undefined;
+                      setEditingSubItem({
+                        ...editingSubItem,
+                        subItem: { ...editingSubItem.subItem, startMonth: newStart },
+                      });
+                    }}
+                    className="px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-700 text-xs text-white outline-none focus:border-emerald-500 font-mono-numbers font-bold"
+                  >
+                    <option value="">Mês (Imediato)</option>
+                    {[
+                      { value: '01', label: 'Janeiro (01)' },
+                      { value: '02', label: 'Fevereiro (02)' },
+                      { value: '03', label: 'Março (03)' },
+                      { value: '04', label: 'Abril (04)' },
+                      { value: '05', label: 'Maio (05)' },
+                      { value: '06', label: 'Junho (06)' },
+                      { value: '07', label: 'Julho (07)' },
+                      { value: '08', label: 'Agosto (08)' },
+                      { value: '09', label: 'Setembro (09)' },
+                      { value: '10', label: 'Outubro (10)' },
+                      { value: '11', label: 'Novembro (11)' },
+                      { value: '12', label: 'Dezembro (12)' },
+                    ].map((m) => (
+                      <option key={m.value} value={m.value}>{m.label}</option>
+                    ))}
+                  </select>
+
+                  <select
+                    value={editingSubItem.subItem.startMonth ? editingSubItem.subItem.startMonth.split('-')[0] || '' : ''}
+                    onChange={(e) => {
+                      const y = e.target.value;
+                      const currentMonthPart = editingSubItem.subItem.startMonth
+                        ? editingSubItem.subItem.startMonth.split('-')[1]
+                        : selectedMonth.split('-')[1] || '01';
+                      const newStart = y ? `${y}-${currentMonthPart}` : undefined;
+                      setEditingSubItem({
+                        ...editingSubItem,
+                        subItem: { ...editingSubItem.subItem, startMonth: newStart },
+                      });
+                    }}
+                    className="px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-700 text-xs text-white outline-none focus:border-emerald-500 font-mono-numbers font-bold"
+                  >
+                    <option value="">Ano</option>
+                    {(() => {
+                      const currentYear = new Date().getFullYear();
+                      const years: number[] = [];
+                      for (let y = currentYear - 2; y <= currentYear + 35; y++) {
+                        years.push(y);
+                      }
+                      return years.map((y) => (
+                        <option key={y} value={y}>{y}</option>
+                      ));
+                    })()}
+                  </select>
+                </div>
+                <span className="text-[10px] text-zinc-400 block">
+                  Define a partir de quando a despesa entra na projeção e na matriz. Meses anteriores ficam zerados.
+                </span>
+              </div>
+
+              {/* Encerrar Projeção Em (Mês / Ano) */}
+              <div className="space-y-1.5 pt-1 border-t border-zinc-900">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-medium text-zinc-300">Encerrar projeção em (Mês / Ano):</label>
+                  {editingSubItem.subItem.endMonth && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setEditingSubItem({
+                          ...editingSubItem,
+                          subItem: { ...editingSubItem.subItem, endMonth: undefined },
+                        })
+                      }
+                      className="text-[10px] text-zinc-500 hover:text-amber-400"
+                    >
+                      Não encerrar (Eterno)
+                    </button>
+                  )}
+                </div>
                 <div className="grid grid-cols-2 gap-2">
                   <select
                     value={editingSubItem.subItem.endMonth ? editingSubItem.subItem.endMonth.split('-')[1] || '' : ''}
                     onChange={(e) => {
                       const m = e.target.value;
-                      const currentYearPart = editingSubItem.subItem.endMonth ? editingSubItem.subItem.endMonth.split('-')[0] : String(new Date().getFullYear());
-                      const newEnd = m && currentYearPart ? `${currentYearPart}-${m}` : undefined;
+                      const currentYearPart = editingSubItem.subItem.endMonth
+                        ? editingSubItem.subItem.endMonth.split('-')[0]
+                        : selectedMonth.split('-')[0] || String(new Date().getFullYear());
+                      const newEnd = m ? `${currentYearPart}-${m}` : undefined;
                       setEditingSubItem({
                         ...editingSubItem,
                         subItem: { ...editingSubItem.subItem, endMonth: newEnd },
@@ -1857,8 +2003,10 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
                     value={editingSubItem.subItem.endMonth ? editingSubItem.subItem.endMonth.split('-')[0] || '' : ''}
                     onChange={(e) => {
                       const y = e.target.value;
-                      const currentMonthPart = editingSubItem.subItem.endMonth ? editingSubItem.subItem.endMonth.split('-')[1] : '12';
-                      const newEnd = y && currentMonthPart ? `${y}-${currentMonthPart}` : y ? `${y}-12` : undefined;
+                      const currentMonthPart = editingSubItem.subItem.endMonth
+                        ? editingSubItem.subItem.endMonth.split('-')[1]
+                        : '12';
+                      const newEnd = y ? `${y}-${currentMonthPart}` : undefined;
                       setEditingSubItem({
                         ...editingSubItem,
                         subItem: { ...editingSubItem.subItem, endMonth: newEnd },
@@ -1880,7 +2028,7 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
                   </select>
                 </div>
                 <span className="text-[10px] text-zinc-400 block">
-                  Defina o mês e o ano limite para o término de financiamentos e empréstimos de longo prazo (ex: até 35 anos).
+                  Define o último mês em que a despesa ocorre. Meses seguintes não projetarão mais esta despesa.
                 </span>
               </div>
 
@@ -1894,18 +2042,6 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
                 </button>
                 <button
                   type="submit"
-                  onClick={() => {
-                    const parsed = parseFloat(editingSubItem.subItem.amount as any);
-                    if (!editingSubItem.subItem.name.trim() || isNaN(parsed) || parsed < 0) return;
-                    updateBudgetSubItem(
-                      editingSubItem.categoryId,
-                      editingSubItem.subItem.id,
-                      editingSubItem.subItem.name.trim(),
-                      parsed,
-                      editingSubItem.subItem.endMonth
-                    );
-                    setEditingSubItem(null);
-                  }}
                   className="px-4 py-2 rounded-xl text-xs font-bold bg-emerald-500 hover:bg-emerald-400 text-zinc-950 transition shadow"
                 >
                   Salvar Alterações

@@ -590,7 +590,9 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
                             let isActive = false;
                             const mIdx = parseInt(s.month.split('-')[1], 10);
                             if (exp.frequency === 'fixed') {
-                              isActive = getMonthDiff(exp.startMonth, s.month) >= 0;
+                              const startDiff = getMonthDiff(exp.startMonth, s.month);
+                              const endDiff = exp.endMonth ? getMonthDiff(s.month, exp.endMonth) : 0;
+                              isActive = startDiff >= 0 && (!exp.endMonth || endDiff >= 0);
                             } else if (exp.frequency === 'installment' && exp.installmentsCount) {
                               isActive = getInstallmentInfo(exp.startMonth, exp.installmentsCount, s.month).isActive;
                             } else if (exp.frequency === 'periodic' && exp.periodicMonths) {
@@ -628,8 +630,18 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
 
                           const totalSpent = expSum + logged + cardTotal;
 
+                          const activeSubItems = (env.subItems || []).filter((sub: any) => {
+                            if (sub.startMonth && getMonthDiff(sub.startMonth, s.month) < 0) {
+                              return false;
+                            }
+                            if (sub.endMonth && getMonthDiff(s.month, sub.endMonth) < 0) {
+                              return false;
+                            }
+                            return true;
+                          });
+
                           const subItemsSum = env.subItems && env.subItems.length > 0
-                            ? env.subItems.reduce((acc: number, curr: any) => acc + curr.amount, 0)
+                            ? activeSubItems.reduce((acc: number, curr: any) => acc + curr.amount, 0)
                             : 0;
                           const baseTarget = env.subItems && env.subItems.length > 0 ? subItemsSum : env.targetAmount;
                           const target = baseTarget + expSum;

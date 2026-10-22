@@ -24,6 +24,7 @@ export interface Expense {
   category: string; // 'Impostos/DAS' | 'Contador' | 'Financiamento/Dívidas' | 'Moradia/Contas' | 'Educação' | 'Família/Pets' | 'Manutenção' | 'Outros'
   frequency: ExpenseFrequency;
   startMonth: string; // YYYY-MM
+  endMonth?: string; // YYYY-MM (opcional para encerramento de despesa fixa)
   installmentsCount?: number; // e.g. 36
   periodicMonths?: number[]; // e.g. [3, 6, 9, 12] for quarterly
   singleMonth?: string; // YYYY-MM
@@ -37,7 +38,8 @@ export interface BudgetSubItem {
   id: string;
   name: string;
   amount: number;
-  endMonth?: string;
+  startMonth?: string; // YYYY-MM
+  endMonth?: string; // YYYY-MM
 }
 
 export interface VariableBudgetCategory {

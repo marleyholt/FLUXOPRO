@@ -85,8 +85,8 @@ interface FinanceContextType {
   updateBudgetEnvelopeTarget: (envelopeId: string, newTarget: number) => void;
   updateBudgetEnvelope: (envelopeId: string, name: string, targetAmount: number) => void;
   deleteBudgetEnvelope: (envelopeId: string) => void;
-  addBudgetSubItem: (categoryId: string, name: string, amount: number) => void;
-  updateBudgetSubItem: (categoryId: string, subItemId: string, name: string, amount: number, endMonth?: string) => void;
+  addBudgetSubItem: (categoryId: string, name: string, amount: number, startMonth?: string, endMonth?: string) => void;
+  updateBudgetSubItem: (categoryId: string, subItemId: string, name: string, amount: number, endMonth?: string, startMonth?: string) => void;
   deleteBudgetSubItem: (categoryId: string, subItemId: string) => void;
   markSubItemAsSaved: (subItemId: string, month: string) => void;
 
@@ -740,11 +740,17 @@ function sanitizeAppData(loaded: AppData): AppData {
   );
 
   const addBudgetSubItem = useCallback(
-    (categoryId: string, name: string, amount: number) => {
+    (categoryId: string, name: string, amount: number, startMonth?: string, endMonth?: string) => {
       const updatedEnvelopes = data.budgetEnvelopes.map((env) => {
         if (env.id === categoryId) {
           const subItems = env.subItems || [];
-          const newItem = { id: `sub_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`, name, amount };
+          const newItem = {
+            id: `sub_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+            name,
+            amount,
+            startMonth: startMonth?.trim() ? startMonth : undefined,
+            endMonth: endMonth?.trim() ? endMonth : undefined,
+          };
           const newSubItems = [...subItems, newItem];
           const totalTarget = newSubItems.reduce((acc, curr) => acc + curr.amount, 0);
           return {
@@ -761,13 +767,19 @@ function sanitizeAppData(loaded: AppData): AppData {
   );
 
   const updateBudgetSubItem = useCallback(
-    (categoryId: string, subItemId: string, name: string, amount: number, endMonth?: string) => {
+    (categoryId: string, subItemId: string, name: string, amount: number, endMonth?: string, startMonth?: string) => {
       const updatedEnvelopes = data.budgetEnvelopes.map((env) => {
         if (env.id === categoryId) {
           const subItems = env.subItems || [];
           const newSubItems = subItems.map((s) =>
             s.id === subItemId
-              ? { ...s, name, amount, endMonth: endMonth?.trim() ? endMonth : undefined }
+              ? {
+                  ...s,
+                  name,
+                  amount,
+                  endMonth: endMonth?.trim() ? endMonth : undefined,
+                  startMonth: startMonth !== undefined ? (startMonth.trim() ? startMonth : undefined) : s.startMonth,
+                }
               : s
           );
           const totalTarget = newSubItems.reduce((acc, curr) => acc + curr.amount, 0);

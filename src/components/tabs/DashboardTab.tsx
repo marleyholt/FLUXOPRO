@@ -275,16 +275,21 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
             return;
           }
 
-          // If sub.endMonth is not set, it's a one-off debt for this month only (remainingMonths = 1).
-          // If sub.endMonth is set, it projects from selectedMonth until sub.endMonth.
-          let remainingMonths = 1;
-          let endMonth = selectedMonth;
+          // Se já encerrou antes do mês selecionado, não lista
+          if (sub.endMonth && getMonthDiff(sub.endMonth, selectedMonth) > 0) {
+            return;
+          }
+
+          let startRef = selectedMonth;
+          if (sub.startMonth && getMonthDiff(selectedMonth, sub.startMonth) > 0) {
+            startRef = sub.startMonth;
+          }
+
+          let remainingMonths = 12;
+          let endMonth = addMonths(startRef, 11);
 
           if (sub.endMonth) {
-            if (getMonthDiff(sub.endMonth, selectedMonth) > 0) {
-              return;
-            }
-            const diff = getMonthDiff(selectedMonth, sub.endMonth) + 1;
+            const diff = getMonthDiff(startRef, sub.endMonth) + 1;
             if (diff > 0) {
               remainingMonths = diff;
               endMonth = sub.endMonth;

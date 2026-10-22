@@ -138,7 +138,9 @@ export function calculateForecast(
 
       let isActive = false;
       if (exp.frequency === 'fixed') {
-        if (getMonthDiff(exp.startMonth, month) >= 0) {
+        const startDiff = getMonthDiff(exp.startMonth, month);
+        const endDiff = exp.endMonth ? getMonthDiff(month, exp.endMonth) : 0;
+        if (startDiff >= 0 && (!exp.endMonth || endDiff >= 0)) {
           isActive = true;
         }
       } else if (exp.frequency === 'installment' && exp.installmentsCount) {
@@ -298,8 +300,18 @@ export function calculateForecast(
       });
       const cardTotalForEnv = cardTxForEnv.reduce((acc, curr) => acc + curr.installmentAmount, 0);
 
+      const activeSubItems = (env.subItems || []).filter((sub) => {
+        if (sub.startMonth && getMonthDiff(sub.startMonth, month) < 0) {
+          return false;
+        }
+        if (sub.endMonth && getMonthDiff(month, sub.endMonth) < 0) {
+          return false;
+        }
+        return true;
+      });
+
       const subItemsSum = env.subItems && env.subItems.length > 0
-        ? env.subItems.reduce((acc, curr) => acc + curr.amount, 0)
+        ? activeSubItems.reduce((acc, curr) => acc + curr.amount, 0)
         : 0;
       const baseTarget = env.subItems && env.subItems.length > 0 ? subItemsSum : env.targetAmount;
 
