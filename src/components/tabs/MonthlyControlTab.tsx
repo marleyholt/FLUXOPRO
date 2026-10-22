@@ -122,7 +122,9 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
     let instText = '';
 
     if (exp.frequency === 'fixed') {
-      if (getMonthDiff(exp.startMonth, selectedMonth) >= 0) isActive = true;
+      const startDiff = getMonthDiff(exp.startMonth, selectedMonth);
+      const endDiff = exp.endMonth ? getMonthDiff(selectedMonth, exp.endMonth) : 0;
+      if (startDiff >= 0 && (!exp.endMonth || endDiff >= 0)) isActive = true;
     } else if (exp.frequency === 'installment' && exp.installmentsCount) {
       const inst = getInstallmentInfo(exp.startMonth, exp.installmentsCount, selectedMonth);
       if (inst.isActive) {
@@ -358,54 +360,66 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
 
       </div>
 
-      {/* Two Column Layout: Left Checklist, Right Envelopes */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      {/* Layout Empilhado: Checklist no Topo (100%), Categorias & Envelopes Abaixo (100%) */}
+      <div className="space-y-6">
         
-        {/* COLUNA ESQUERDA: CHECKLIST DE CONTAS FIXAS & PARCELADAS (5 cols) */}
-        <div className="lg:col-span-5 space-y-4">
-          <div className="p-4 rounded-2xl bg-zinc-900/90 border border-zinc-800/80 shadow-sm space-y-4">
+        {/* SEÇÃO SUPERIOR: CHECKLIST DE CONTAS FIXAS & PARCELADAS */}
+        <div className="space-y-4">
+          <div className="p-4 sm:p-5 rounded-2xl bg-zinc-900/90 border border-zinc-800/80 shadow-sm space-y-4">
             
-            {/* Header & Stats */}
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                  <CheckSquare className="w-4 h-4 text-emerald-400" />
-                  Checklist de Contas e Obrigações
-                </h3>
-                <span className="text-xs font-medium text-zinc-400">
-                  {paidBillsCount} de {totalBillsCount} quitadas
-                </span>
+            {/* Header, Stats & Resumos Horizontais */}
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+              <div className="flex-1 space-y-2">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                    <CheckSquare className="w-4 h-4 text-emerald-400" />
+                    Checklist de Contas e Obrigações
+                  </h3>
+                  <span className="text-xs font-medium text-zinc-400">
+                    {paidBillsCount} de {totalBillsCount} quitadas
+                  </span>
+                </div>
+
+                {/* Progress bar */}
+                <div className="w-full bg-zinc-800 h-2.5 rounded-full overflow-hidden">
+                  <div
+                    className="bg-emerald-400 h-full rounded-full transition-all duration-300"
+                    style={{
+                      width: totalBillsCount > 0 ? `${(paidBillsCount / totalBillsCount) * 100}%` : '0%',
+                    }}
+                  />
+                </div>
               </div>
 
-              {/* Progress bar */}
-              <div className="w-full bg-zinc-800 h-2 rounded-full overflow-hidden">
-                <div
-                  className="bg-emerald-400 h-full rounded-full transition-all duration-300"
-                  style={{
-                    width: totalBillsCount > 0 ? `${(paidBillsCount / totalBillsCount) * 100}%` : '0%',
-                  }}
-                />
-              </div>
-            </div>
-
-            {/* Quick summary badges */}
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <div className="p-2.5 rounded-xl bg-zinc-950/80 border border-zinc-800">
-                <span className="text-[10px] text-zinc-400 block">Total Quitado</span>
-                <span className="font-mono-numbers font-bold text-emerald-400">
-                  {formatBRL(totalPaidAmount)}
-                </span>
-              </div>
-              <div className="p-2.5 rounded-xl bg-zinc-950/80 border border-zinc-800">
-                <span className="text-[10px] text-zinc-400 block">Restante a Pagar</span>
-                <span className="font-mono-numbers font-bold text-amber-400">
-                  {formatBRL(remainingAmountToPay)}
-                </span>
+              {/* Quick summary badges */}
+              <div className="grid grid-cols-2 gap-3 text-xs shrink-0 lg:w-96">
+                <div className="p-2.5 rounded-xl bg-zinc-950/80 border border-zinc-800 flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] text-zinc-400 block">Total Quitado</span>
+                    <span className="font-mono-numbers font-bold text-emerald-400 text-sm">
+                      {formatBRL(totalPaidAmount)}
+                    </span>
+                  </div>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 font-bold">
+                    {paidBillsCount} pagas
+                  </span>
+                </div>
+                <div className="p-2.5 rounded-xl bg-zinc-950/80 border border-zinc-800 flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] text-zinc-400 block">Restante a Pagar</span>
+                    <span className="font-mono-numbers font-bold text-amber-400 text-sm">
+                      {formatBRL(remainingAmountToPay)}
+                    </span>
+                  </div>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 font-bold">
+                    {totalBillsCount - paidBillsCount} pend.
+                  </span>
+                </div>
               </div>
             </div>
 
             {/* Filters */}
-            <div className="flex items-center gap-1 p-1 bg-zinc-950 border border-zinc-800 rounded-lg text-xs">
+            <div className="flex items-center gap-1 p-1 bg-zinc-950 border border-zinc-800 rounded-lg text-xs w-full sm:w-80">
               <button
                 onClick={() => setBillFilter('ALL')}
                 className={`flex-1 py-1 rounded text-center font-medium transition ${
@@ -438,8 +452,8 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
               </button>
             </div>
 
-            {/* Bills List */}
-            <div className="space-y-2 max-h-[550px] overflow-y-auto pr-1">
+            {/* Bills List (Grid de 2 colunas para aproveitar o espaço amplo) */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 max-h-[440px] overflow-y-auto pr-1">
               {filteredChecklist.length === 0 ? (
                 <div className="p-6 text-center text-xs text-zinc-400 rounded-xl bg-zinc-950/40 border border-dashed border-zinc-800">
                   Nenhuma conta encontrada neste filtro.
@@ -549,8 +563,8 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
           </div>
         </div>
 
-        {/* COLUNA DIREITA: PREVISÃO & CONTROLE DE ENVELOPES (7 cols) */}
-        <div className="lg:col-span-7 space-y-4">
+        {/* SEÇÃO INFERIOR: PREVISÃO & CONTROLE DE ENVELOPES (LARGURA TOTAL) */}
+        <div className="space-y-4">
           <div className="p-4 rounded-2xl bg-zinc-900/90 border border-zinc-800/80 shadow-sm space-y-4">
             
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
@@ -768,7 +782,9 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
                         const activeCategoryExpenses = data.expenses.filter((exp) => {
                     let isActive = false;
                     if (exp.frequency === 'fixed') {
-                      isActive = getMonthDiff(exp.startMonth, selectedMonth) >= 0;
+                      const startDiff = getMonthDiff(exp.startMonth, selectedMonth);
+                      const endDiff = exp.endMonth ? getMonthDiff(selectedMonth, exp.endMonth) : 0;
+                      isActive = startDiff >= 0 && (!exp.endMonth || endDiff >= 0);
                     } else if (exp.frequency === 'installment' && exp.installmentsCount) {
                       isActive = getInstallmentInfo(exp.startMonth, exp.installmentsCount, selectedMonth).isActive;
                     } else if (exp.frequency === 'periodic' && exp.periodicMonths) {
@@ -902,7 +918,7 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
                         <span className="text-[11px] text-zinc-400 font-mono-numbers">
                           Teto Orçado: <strong className="text-emerald-400 font-bold">{formatBRL(target)}</strong>
                           {env.subItems && env.subItems.length > 0 && (
-                            <span className="text-[10px] text-zinc-500 block">({env.subItems.length} subitem/ns somados)</span>
+                            <span className="text-[10px] text-zinc-500 block">({activeSubItems.length} subitem/ns ativos no mês)</span>
                           )}
                         </span>
 
@@ -958,26 +974,26 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
                           <div className="flex items-center justify-between">
                             <div>
                               <span className="text-[11px] font-bold text-emerald-400 block uppercase tracking-wider">
-                                Previsão & Controle de Subitens ({env.subItems?.length || 0}):
+                                Previsão & Controle de Subitens ({activeSubItems.length}):
                               </span>
                               <p className="text-[10px] text-zinc-400">
                                 Cada item planejado deduz os gastos reais vinculados a ele para evitar duplicidades.
                               </p>
                             </div>
-                            {env.subItems && env.subItems.length > 0 && (
+                            {activeSubItems.length > 0 && (
                               <span className="text-[11px] font-mono-numbers text-emerald-300 font-bold bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
                                 Teto Somado = {formatBRL(subItemsSum)}
                               </span>
                             )}
                           </div>
 
-                          {(!env.subItems || env.subItems.length === 0) ? (
+                          {activeSubItems.length === 0 ? (
                             <p className="text-[11px] text-zinc-500 italic py-1">
-                              Nenhum item inserido nesta categoria. Adicione subcategorias abaixo (ex: Luz, Condomínio, Supermercado) para formar o teto de gastos e poder vincular pagamentos.
+                              Nenhum subitem previsto ativo para este mês ({getMonthLabel(selectedMonth)}). Adicione subcategorias abaixo (ex: Luz, Condomínio, Supermercado) para planejar o teto deste mês.
                             </p>
                           ) : (
                             <div className="space-y-2.5">
-                              {env.subItems.map((sub) => {
+                              {activeSubItems.map((sub) => {
                                 const linkedLogs = logs.filter((l) => l.linkedSubItemId === sub.id);
                                 const linkedCardTxs = cardTxForEnv.filter((tx) => tx.linkedSubItemId === sub.id);
                                 const spentOnSub =
@@ -988,26 +1004,19 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
                                 const isPaidFull = diff === 0 && spentOnSub > 0;
                                 const isPartial = spentOnSub > 0 && diff > 0;
                                 const isUnpaid = spentOnSub === 0;
-                                const isInactiveThisMonth =
-                                  (sub.startMonth && getMonthDiff(sub.startMonth, selectedMonth) < 0) ||
-                                  (sub.endMonth && getMonthDiff(selectedMonth, sub.endMonth) < 0);
 
                                 return (
                                   <div
                                     key={sub.id}
-                                    className={`p-3 rounded-xl border space-y-2 transition ${
-                                      isInactiveThisMonth
-                                        ? 'bg-zinc-950/40 border-zinc-850 opacity-60'
-                                        : 'bg-zinc-950/90 border-zinc-800/90 hover:border-zinc-700'
-                                    }`}
+                                    className="p-3 rounded-xl bg-zinc-950/90 border border-zinc-800/90 space-y-2 hover:border-zinc-700 transition"
                                   >
                                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                                       <div className="flex flex-wrap items-center gap-1.5">
-                                        <span className={`font-bold text-xs ${isInactiveThisMonth ? 'text-zinc-400' : 'text-zinc-100'}`}>
+                                        <span className="font-bold text-zinc-100 text-xs">
                                           {sub.name}
                                         </span>
 
-                                        {/* Tag de Vigência */}
+                                        {/* Tag de Vigência Informativa */}
                                         {(sub.startMonth || sub.endMonth) && (
                                           <span className="text-[10px] text-zinc-400 bg-zinc-900 px-1.5 py-0.5 rounded border border-zinc-800">
                                             📅 {sub.startMonth && sub.endMonth
@@ -1018,29 +1027,23 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
                                           </span>
                                         )}
 
-                                        {isInactiveThisMonth && (
-                                          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-zinc-800 text-zinc-400 border border-zinc-700">
-                                            Fora da vigência em {getMonthLabel(selectedMonth)}
-                                          </span>
-                                        )}
-
-                                        {/* Status Badge quando ativo */}
-                                        {!isInactiveThisMonth && isPaidFull && (
+                                        {/* Status Badge */}
+                                        {isPaidFull && (
                                           <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1">
                                             <CheckCircle2 className="w-3 h-3 text-emerald-400" /> Quitado Integral
                                           </span>
                                         )}
-                                        {!isInactiveThisMonth && isPartial && (
+                                        {isPartial && (
                                           <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
                                             🟡 Parcial (Resta: {formatBRL(diff)})
                                           </span>
                                         )}
-                                        {!isInactiveThisMonth && isOver && (
+                                        {isOver && (
                                           <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40">
                                             🔴 Estourado (+{formatBRL(Math.abs(diff))})
                                           </span>
                                         )}
-                                        {!isInactiveThisMonth && isUnpaid && (
+                                        {isUnpaid && (
                                           <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-zinc-800 text-zinc-400 border border-zinc-700">
                                             ⏳ Pendente
                                           </span>
