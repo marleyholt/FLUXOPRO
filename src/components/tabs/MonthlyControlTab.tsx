@@ -46,6 +46,7 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
     summaries,
     currentMonthSummary,
     toggleExpensePaid,
+    toggleCardInvoicePaid,
     updateExpense,
     deleteExpense,
     updateVariableExpenseLog,
@@ -105,6 +106,7 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
   interface ChecklistItem {
     id: string;
     type: 'expense' | 'card';
+    cardId?: string;
     title: string;
     amount: number;
     category: string;
@@ -163,14 +165,18 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
   data.creditCards.forEach((card) => {
     const cardBillAmount = current.cardTotalsByCard[card.id] || 0;
     if (cardBillAmount > 0) {
+      const status = card.invoicePaymentStatusByMonth?.[selectedMonth];
+      const isCardPaid = status === 'paid_on_time' || status === 'paid_late';
       checklistItems.push({
         id: `card-bill-${card.id}`,
         type: 'card',
+        cardId: card.id,
         title: `Fatura ${card.name}`,
         amount: cardBillAmount,
         category: 'Cartão de Crédito',
         scope: card.scope,
-        isPaid: false,
+        isPaid: isCardPaid,
+        installmentText: `Banco: ${card.bank || 'Cartão'}`,
       });
     }
   });
@@ -474,9 +480,13 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
                         disabled={isClosed}
                         onClick={() => {
                           if (isClosed) return;
-                          if (item.type === 'expense') toggleExpensePaid(item.id, selectedMonth);
+                          if (item.type === 'expense') {
+                            toggleExpensePaid(item.id, selectedMonth);
+                          } else if (item.type === 'card' && item.cardId) {
+                            toggleCardInvoicePaid(item.cardId, selectedMonth);
+                          }
                         }}
-                        className={`shrink-0 ${isClosed ? 'cursor-not-allowed opacity-50' : 'text-zinc-400 hover:text-white'}`}
+                        className={`shrink-0 ${isClosed ? 'cursor-not-allowed opacity-50' : 'text-zinc-400 hover:text-white cursor-pointer'}`}
                         title={isClosed ? 'Mês fechado: bloqueado' : item.isPaid ? 'Marcar como Pendente' : 'Marcar como Pago'}
                       >
                         {item.isPaid ? (
@@ -551,6 +561,19 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
                             title="Excluir esta conta"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Actions for Card Bill */}
+                      {!isClosed && item.type === 'card' && (
+                        <div className="flex items-center gap-1 border-l border-zinc-800 pl-2">
+                          <button
+                            onClick={() => setActiveTab('cards')}
+                            className="p-1 rounded text-indigo-400 hover:text-white hover:bg-indigo-950/50 transition"
+                            title="Ver detalhes da fatura na Central de Cartões"
+                          >
+                            <CreditCard className="w-3.5 h-3.5" />
                           </button>
                         </div>
                       )}

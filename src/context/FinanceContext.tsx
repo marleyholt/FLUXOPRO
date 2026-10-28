@@ -26,7 +26,7 @@ import {
   saveFirebaseConfig,
 } from '../services/dataService';
 import { INITIAL_SEED_DATA } from '../data/seedData';
-import { calculateForecast, getMonthDiff, getMonthLabel } from '../utils/calculations';
+import { calculateForecast, getMonthDiff, getMonthLabel, getInstallmentInfo } from '../utils/calculations';
 import { convertCsvItemToTransaction } from '../utils/csvParser';
 
 interface FinanceContextType {
@@ -59,6 +59,7 @@ interface FinanceContextType {
   updateExpense: (expense: Expense) => void;
   deleteExpense: (id: string) => void;
   toggleExpensePaid: (expenseId: string, month: string) => void;
+  toggleCardInvoicePaid: (cardId: string, month: string) => void;
   toggleExpenseReview: (expenseId: string) => void;
 
   addCardTransaction: (tx: Omit<CardTransaction, 'id'>) => void;
@@ -634,6 +635,58 @@ function sanitizeAppData(loaded: AppData): AppData {
       persistLocally({ ...data, creditCards: updatedCards });
     },
     [data, persistLocally]
+  );
+
+  const toggleCardInvoicePaid = useCallback(
+    (cardId: string, month: string) => {
+      if (isMonthClosed(month)) {
+        console.warn(`Mês ${month} está fechado. Operação bloqueada.`);
+        return;
+      }
+      const updatedCards = data.creditCards.map((card) => {
+        if (card.id === cardId) {
+          const currentStatus = card.invoicePaymentStatusByMonth?.[month];
+          const isCurrentlyPaid = currentStatus === 'paid_on_time' || currentStatus === 'paid_late';
+
+          const newStatusMap = { ...(card.invoicePaymentStatusByMonth || {}) };
+          const newPaidMap = { ...(card.invoicePaidAmountByMonth || {}) };
+          const newDateMap = { ...(card.invoicePaymentDateByMonth || {}) };
+
+          if (isCurrentlyPaid) {
+            newStatusMap[month] = 'unpaid';
+            delete newPaidMap[month];
+          } else {
+            newStatusMap[month] = 'paid_on_time';
+            // Calcula total de transações deste mês
+            let cardTxThisMonth = 0;
+            data.cardTransactions.forEach((tx) => {
+              if (tx.cardId !== card.id || tx.isPaused) return;
+              if (tx.type === 'recurring' && getMonthDiff(tx.startMonth, month) >= 0) {
+                cardTxThisMonth += tx.installmentAmount;
+              } else if (tx.type === 'installment' && getInstallmentInfo(tx.startMonth, tx.totalInstallments, month).isActive) {
+                cardTxThisMonth += tx.installmentAmount;
+              } else if (tx.type === 'single' && tx.startMonth === month) {
+                cardTxThisMonth += tx.installmentAmount;
+              }
+            });
+            const realTotal = card.realInvoiceTotalByMonth?.[month];
+            const finalAmt = realTotal !== undefined ? Math.max(realTotal, cardTxThisMonth) : cardTxThisMonth;
+            newPaidMap[month] = finalAmt;
+            newDateMap[month] = new Date().toISOString().split('T')[0];
+          }
+
+          return {
+            ...card,
+            invoicePaymentStatusByMonth: newStatusMap,
+            invoicePaidAmountByMonth: newPaidMap,
+            invoicePaymentDateByMonth: newDateMap,
+          };
+        }
+        return card;
+      });
+      persistLocally({ ...data, creditCards: updatedCards });
+    },
+    [data, isMonthClosed, persistLocally]
   );
 
   // Variable Expense Logs & Categories
@@ -1405,6 +1458,7 @@ function sanitizeAppData(loaded: AppData): AppData {
         updateExpense,
         deleteExpense,
         toggleExpensePaid,
+        toggleCardInvoicePaid,
         toggleExpenseReview,
         addCardTransaction,
         updateCardTransaction,

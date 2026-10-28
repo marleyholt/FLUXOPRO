@@ -186,12 +186,21 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
     }
   });
 
-  // Add credit card bills as pending if any
-  const totalCardsAmount = current.cardTotal;
-  if (totalCardsAmount > 0) {
-    billsPendingCount += data.creditCards.length;
-    billsPendingAmount += totalCardsAmount;
-  }
+  // Add credit card bills as paid or pending
+  data.creditCards.forEach((card) => {
+    const cardBillAmount = current.cardTotalsByCard[card.id] || 0;
+    if (cardBillAmount > 0) {
+      const status = card.invoicePaymentStatusByMonth?.[selectedMonth];
+      const isPaid = status === 'paid_on_time' || status === 'paid_late';
+      if (isPaid) {
+        billsPaidCount++;
+        billsPaidAmount += cardBillAmount;
+      } else {
+        billsPendingCount++;
+        billsPendingAmount += cardBillAmount;
+      }
+    }
+  });
 
   // Scheduled Reminders and Pushed list
   const activeScheduledReminders = Object.values(data.monthlyClosings || {})
