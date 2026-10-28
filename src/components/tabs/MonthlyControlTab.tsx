@@ -8,7 +8,7 @@ import {
   Calendar,
   DollarSign,
   TrendingUp,
-  CreditCard,
+  CreditCard as CreditCardIcon,
   Building2,
   Home,
   CheckCircle2,
@@ -29,7 +29,9 @@ import {
 } from 'lucide-react';
 import { useFinance } from '../../context/FinanceContext';
 import { formatBRL, getMonthDiff, getInstallmentInfo, getMonthLabel } from '../../utils/calculations';
-import { Expense, VariableExpenseLog } from '../../types/finance';
+import { Expense, VariableExpenseLog, CreditCard } from '../../types/finance';
+import { CardInvoicePaymentModal } from '../modals/CardInvoicePaymentModal';
+import { DirectDebtModal } from '../modals/DirectDebtModal';
 
 interface MonthlyControlTabProps {
   onOpenQuickExpense: (envelopeId?: string, subItemId?: string, expenseId?: string) => void;
@@ -98,6 +100,15 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
     message: string;
     onConfirm: () => void;
   } | null>(null);
+
+  // Estados para Pagamento de Cartão e Dívida Atrasada
+  const [isCardPaymentModalOpen, setIsCardPaymentModalOpen] = useState(false);
+  const [selectedCardForPayment, setSelectedCardForPayment] = useState<{
+    card: CreditCard;
+    month: string;
+    totalAmount: number;
+  } | null>(null);
+  const [isDirectDebtModalOpen, setIsDirectDebtModalOpen] = useState(false);
 
   const current = currentMonthSummary || summaries[0];
   const monthIdx = parseInt(selectedMonth.split('-')[1], 10);
@@ -292,6 +303,13 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
           {!isClosed && (
             <div className="flex items-center gap-2 self-start sm:self-auto">
               <button
+                onClick={() => setIsDirectDebtModalOpen(true)}
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-zinc-800 hover:bg-zinc-700 text-amber-300 border border-amber-500/30 transition flex items-center gap-1.5 shadow-sm"
+              >
+                <Clock className="w-3.5 h-3.5 text-amber-400" />
+                <span>+ Cadastrar Dívida Atrasada</span>
+              </button>
+              <button
                 onClick={() => onOpenNewTransaction()}
                 className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-zinc-800 hover:bg-zinc-700 text-emerald-300 border border-emerald-500/30 transition flex items-center gap-1.5 shadow-sm"
               >
@@ -483,7 +501,21 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
                           if (item.type === 'expense') {
                             toggleExpensePaid(item.id, selectedMonth);
                           } else if (item.type === 'card' && item.cardId) {
-                            toggleCardInvoicePaid(item.cardId, selectedMonth);
+                            if (item.isPaid) {
+                              toggleCardInvoicePaid(item.cardId, selectedMonth);
+                            } else {
+                              const foundCard = data.creditCards.find((c) => c.id === item.cardId);
+                              if (foundCard) {
+                                setSelectedCardForPayment({
+                                  card: foundCard,
+                                  month: selectedMonth,
+                                  totalAmount: item.amount,
+                                });
+                                setIsCardPaymentModalOpen(true);
+                              } else {
+                                toggleCardInvoicePaid(item.cardId, selectedMonth);
+                              }
+                            }
                           }
                         }}
                         className={`shrink-0 ${isClosed ? 'cursor-not-allowed opacity-50' : 'text-zinc-400 hover:text-white cursor-pointer'}`}
@@ -573,7 +605,7 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
                             className="p-1 rounded text-indigo-400 hover:text-white hover:bg-indigo-950/50 transition"
                             title="Ver detalhes da fatura na Central de Cartões"
                           >
-                            <CreditCard className="w-3.5 h-3.5" />
+                            <CreditCardIcon className="w-3.5 h-3.5" />
                           </button>
                         </div>
                       )}
@@ -1188,7 +1220,7 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
                                               className="flex items-center justify-between text-xs py-1 px-2 rounded bg-indigo-950/20 border border-indigo-500/20 text-indigo-300 transition"
                                             >
                                               <div className="truncate mr-2 flex items-center gap-1.5">
-                                                <CreditCard className="w-3 h-3 text-indigo-400" />
+                                                <CreditCardIcon className="w-3 h-3 text-indigo-400" />
                                                 <span className="font-medium truncate">{tx.description}</span>
                                               </div>
                                               <span className="font-mono-numbers font-semibold text-indigo-300">
@@ -2114,6 +2146,26 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
           </div>
         </div>
       )}
+
+      {/* Modal de Pagamento de Fatura com Rotativo */}
+      {selectedCardForPayment && (
+        <CardInvoicePaymentModal
+          isOpen={isCardPaymentModalOpen}
+          onClose={() => {
+            setIsCardPaymentModalOpen(false);
+            setSelectedCardForPayment(null);
+          }}
+          card={selectedCardForPayment.card}
+          month={selectedCardForPayment.month}
+          totalAmount={selectedCardForPayment.totalAmount}
+        />
+      )}
+
+      {/* Modal de Cadastro Direto de Dívidas Atrasadas */}
+      <DirectDebtModal
+        isOpen={isDirectDebtModalOpen}
+        onClose={() => setIsDirectDebtModalOpen(false)}
+      />
 
     </div>
   );

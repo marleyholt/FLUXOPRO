@@ -128,7 +128,7 @@ export const MonthlyClosingTab: React.FC = () => {
     title: string;
     amount: number;
     month: string;
-    type: 'expense' | 'card' | 'subitem';
+    type: 'expense' | 'card' | 'subitem' | 'direct_debt';
     cardId?: string;
   } | null>(null);
   const [postponeInterestRate, setPostponeInterestRate] = useState<string>('');
@@ -207,7 +207,7 @@ export const MonthlyClosingTab: React.FC = () => {
     month: string;
     monthLabel: string;
     installmentText?: string;
-    type: 'expense' | 'card' | 'subitem';
+    type: 'expense' | 'card' | 'subitem' | 'direct_debt';
     cardId?: string;
     isPushed?: boolean;
     targetMonth?: string;

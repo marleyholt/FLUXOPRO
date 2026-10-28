@@ -26,7 +26,7 @@ import {
   saveFirebaseConfig,
 } from '../services/dataService';
 import { INITIAL_SEED_DATA } from '../data/seedData';
-import { calculateForecast, getMonthDiff, getMonthLabel, getInstallmentInfo } from '../utils/calculations';
+import { calculateForecast, getMonthDiff, getMonthLabel, getInstallmentInfo, addMonths, formatBRL } from '../utils/calculations';
 import { convertCsvItemToTransaction } from '../utils/csvParser';
 
 interface FinanceContextType {
@@ -60,6 +60,17 @@ interface FinanceContextType {
   deleteExpense: (id: string) => void;
   toggleExpensePaid: (expenseId: string, month: string) => void;
   toggleCardInvoicePaid: (cardId: string, month: string) => void;
+  payCardInvoiceWithRotativo: (
+    cardId: string,
+    month: string,
+    params: {
+      paidAmount: number;
+      isPartial: boolean;
+      rotativoAmount?: number;
+      interestAmount?: number;
+      interestRate?: number;
+    }
+  ) => void;
   toggleExpenseReview: (expenseId: string) => void;
 
   addCardTransaction: (tx: Omit<CardTransaction, 'id'>) => void;
@@ -126,7 +137,7 @@ interface FinanceContextType {
     amount: number,
     month: string,
     targetMonth: string,
-    type?: 'expense' | 'card' | 'subitem',
+    type?: 'expense' | 'card' | 'subitem' | 'direct_debt',
     cardId?: string,
     reason?: string,
     interestRate?: number,
@@ -134,6 +145,26 @@ interface FinanceContextType {
   ) => void;
   resolveScheduledReminder: (month: string, reminderId: string) => void;
   resolvePushedDebt: (month: string, pushedDebtId: string) => void;
+  addDirectDebt: (params: {
+    creditorSource: string;
+    expenseTitle: string;
+    amount: number;
+    startDate: string;
+    interestRate?: number;
+    interestType?: 'daily' | 'monthly';
+    targetEndMonth?: string;
+    reason?: string;
+  }) => void;
+  settlePushedDebt: (
+    debtId: string,
+    params: {
+      actualPaidAmount: number;
+      isNegotiated: boolean;
+      paidDate: string;
+      negotiationNotes?: string;
+    }
+  ) => void;
+  deletePushedDebt: (debtId: string) => void;
 
   // Banks & Cards Management
   addBankAccount: (bank: Omit<BankAccountConfig, 'id'>) => void;
@@ -613,7 +644,12 @@ function sanitizeAppData(loaded: AppData): AppData {
         }
         return card;
       });
-      persistLocally({ ...data, creditCards: updatedCards });
+      // Anti-duplicidade: ao definir a fatura real, remove projeções temporárias de rotativo do mês
+      const cleanedTransactions = (realTotal !== undefined && realTotal > 0)
+        ? data.cardTransactions.filter((t) => !(t.cardId === cardId && t.startMonth === month && t.isRotativoProjection))
+        : data.cardTransactions;
+
+      persistLocally({ ...data, creditCards: updatedCards, cardTransactions: cleanedTransactions });
     },
     [data, isMonthClosed, persistLocally]
   );
@@ -646,7 +682,7 @@ function sanitizeAppData(loaded: AppData): AppData {
       const updatedCards = data.creditCards.map((card) => {
         if (card.id === cardId) {
           const currentStatus = card.invoicePaymentStatusByMonth?.[month];
-          const isCurrentlyPaid = currentStatus === 'paid_on_time' || currentStatus === 'paid_late';
+          const isCurrentlyPaid = currentStatus === 'paid_on_time' || currentStatus === 'paid_late' || currentStatus === 'partial_late';
 
           const newStatusMap = { ...(card.invoicePaymentStatusByMonth || {}) };
           const newPaidMap = { ...(card.invoicePaidAmountByMonth || {}) };
@@ -684,7 +720,112 @@ function sanitizeAppData(loaded: AppData): AppData {
         }
         return card;
       });
-      persistLocally({ ...data, creditCards: updatedCards });
+
+      // Se desmarcou como pago, remove eventuais projeções de rotativo geradas a partir deste mês
+      let updatedTransactions = data.cardTransactions;
+      const targetCard = data.creditCards.find((c) => c.id === cardId);
+      const isCurrentlyPaid = targetCard?.invoicePaymentStatusByMonth?.[month] === 'paid_on_time' || targetCard?.invoicePaymentStatusByMonth?.[month] === 'partial_late';
+      if (isCurrentlyPaid) {
+        updatedTransactions = updatedTransactions.filter(
+          (t) => !(t.cardId === cardId && t.rotativoSourceMonth === month && t.isRotativoProjection)
+        );
+      }
+
+      persistLocally({ ...data, creditCards: updatedCards, cardTransactions: updatedTransactions });
+    },
+    [data, isMonthClosed, persistLocally]
+  );
+
+  const payCardInvoiceWithRotativo = useCallback(
+    (
+      cardId: string,
+      month: string,
+      params: {
+        paidAmount: number;
+        isPartial: boolean;
+        rotativoAmount?: number;
+        interestAmount?: number;
+        interestRate?: number;
+      }
+    ) => {
+      if (isMonthClosed(month)) {
+        console.warn(`Mês ${month} está fechado. Operação bloqueada.`);
+        return;
+      }
+
+      const { paidAmount, isPartial, rotativoAmount = 0, interestAmount = 0, interestRate = 0 } = params;
+      const nextMonth = addMonths(month, 1);
+
+      // 1. Atualiza status da fatura deste mês no cartão
+      const updatedCards = data.creditCards.map((card) => {
+        if (card.id === cardId) {
+          const statusMap = { ...(card.invoicePaymentStatusByMonth || {}) };
+          const paidMap = { ...(card.invoicePaidAmountByMonth || {}) };
+          const dateMap = { ...(card.invoicePaymentDateByMonth || {}) };
+
+          statusMap[month] = isPartial ? 'partial_late' : 'paid_on_time';
+          paidMap[month] = paidAmount;
+          dateMap[month] = new Date().toISOString().split('T')[0];
+
+          return {
+            ...card,
+            invoicePaymentStatusByMonth: statusMap,
+            invoicePaidAmountByMonth: paidMap,
+            invoicePaymentDateByMonth: dateMap,
+          };
+        }
+        return card;
+      });
+
+      // 2. Limpa projeções anteriores deste mesmo mês/cartão para evitar duplicidades
+      let updatedTransactions = data.cardTransactions.filter(
+        (t) => !(t.cardId === cardId && t.rotativoSourceMonth === month && t.isRotativoProjection)
+      );
+
+      // 3. Se for parcial e houver saldo rotativado, gera os 2 lançamentos discriminados no mês seguinte
+      if (isPartial && rotativoAmount > 0) {
+        const monthLabel = getMonthLabel(month);
+
+        const rotativoBalanceTx: CardTransaction = {
+          id: `tx-rot-${Date.now()}-bal-${Math.random().toString(36).slice(2, 6)}`,
+          cardId,
+          description: `Saldo Rotativo Fatura ${monthLabel}`,
+          type: 'single',
+          installmentAmount: rotativoAmount,
+          totalAmount: rotativoAmount,
+          totalInstallments: 1,
+          startMonth: nextMonth,
+          category: 'Encargos e Rotativo',
+          needsReview: false,
+          isRotativoProjection: true,
+          rotativoSourceMonth: month,
+          notes: `Transferido da fatura de ${monthLabel} após pagamento parcial de ${formatBRL(paidAmount)}`,
+        };
+
+        const rotativoInterestTx: CardTransaction = {
+          id: `tx-rot-${Date.now()}-int-${Math.random().toString(36).slice(2, 6)}`,
+          cardId,
+          description: `Juros do Rotativo ${monthLabel} (${interestRate > 0 ? interestRate : 'Taxa'}% a.m.)`,
+          type: 'single',
+          installmentAmount: interestAmount,
+          totalAmount: interestAmount,
+          totalInstallments: 1,
+          startMonth: nextMonth,
+          category: 'Encargos e Rotativo',
+          needsReview: false,
+          isRotativoProjection: true,
+          rotativoSourceMonth: month,
+          notes: `Juros calculados sobre ${formatBRL(rotativoAmount)} (${interestRate}% a.m.)`,
+        };
+
+        updatedTransactions.push(rotativoBalanceTx, rotativoInterestTx);
+      }
+
+      persistLocally({
+        ...data,
+        creditCards: updatedCards,
+        cardTransactions: updatedTransactions,
+      });
     },
     [data, isMonthClosed, persistLocally]
   );
@@ -1166,7 +1307,7 @@ function sanitizeAppData(loaded: AppData): AppData {
       amount: number,
       month: string,
       targetMonth: string,
-      type: 'expense' | 'card' | 'subitem' = 'expense',
+      type: 'expense' | 'card' | 'subitem' | 'direct_debt' = 'expense',
       cardId?: string,
       reason?: string,
       interestRate?: number,
@@ -1233,6 +1374,135 @@ function sanitizeAppData(loaded: AppData): AppData {
     [data, persistLocally]
   );
 
+  const addDirectDebt = useCallback(
+    (params: {
+      creditorSource: string;
+      expenseTitle: string;
+      amount: number;
+      startDate: string;
+      interestRate?: number;
+      interestType?: 'daily' | 'monthly';
+      targetEndMonth?: string;
+      reason?: string;
+    }) => {
+      const currentMonthKey = selectedMonth || data.settings.vigenteMonth || '2026-10';
+      const currentClosings = { ...(data.monthlyClosings || {}) };
+      const closing = currentClosings[currentMonthKey] || {
+        month: currentMonthKey,
+        closingRealBalance: 0,
+        projectedBalance: 0,
+        adjustmentDifference: 0,
+        isOverdraft: false,
+        scheduledReminders: [],
+        pushedDebts: [],
+      };
+
+      const newDebt: PushedDebtBill = {
+        id: `debt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        expenseId: `direct-debt-${Date.now()}`,
+        expenseTitle: params.expenseTitle,
+        amount: params.amount,
+        month: params.startDate ? params.startDate.slice(0, 7) : currentMonthKey,
+        targetMonth: params.targetEndMonth || addMonths(currentMonthKey, 12),
+        targetEndMonth: params.targetEndMonth?.trim() ? params.targetEndMonth : undefined,
+        pushedAt: new Date().toISOString(),
+        reason: params.reason || `Dívida anterior trazida de ${params.creditorSource}`,
+        status: 'pushed',
+        type: 'direct_debt',
+        creditorSource: params.creditorSource,
+        startDate: params.startDate,
+        interestRate: params.interestRate,
+        interestType: params.interestType || 'monthly',
+        isDirectDebt: true,
+      };
+
+      currentClosings[currentMonthKey] = {
+        ...closing,
+        pushedDebts: [...(closing.pushedDebts || []), newDebt],
+      };
+
+      persistLocally({
+        ...data,
+        monthlyClosings: currentClosings,
+      });
+    },
+    [data, selectedMonth, persistLocally]
+  );
+
+  const settlePushedDebt = useCallback(
+    (
+      debtId: string,
+      params: {
+        actualPaidAmount: number;
+        isNegotiated: boolean;
+        paidDate: string;
+        negotiationNotes?: string;
+      }
+    ) => {
+      const currentClosings = { ...(data.monthlyClosings || {}) };
+      let found = false;
+
+      Object.keys(currentClosings).forEach((m) => {
+        const closing = currentClosings[m];
+        if (closing?.pushedDebts?.some((d) => d.id === debtId)) {
+          found = true;
+          currentClosings[m] = {
+            ...closing,
+            pushedDebts: closing.pushedDebts.map((d) => {
+              if (d.id === debtId) {
+                const discount = Math.max(0, d.amount - params.actualPaidAmount);
+                return {
+                  ...d,
+                  status: 'paid' as const,
+                  isNegotiated: params.isNegotiated,
+                  actualPaidAmount: params.actualPaidAmount,
+                  negotiationDiscount: discount,
+                  paidDate: params.paidDate,
+                  negotiationNotes: params.negotiationNotes,
+                };
+              }
+              return d;
+            }),
+          };
+        }
+      });
+
+      if (found) {
+        persistLocally({
+          ...data,
+          monthlyClosings: currentClosings,
+        });
+      }
+    },
+    [data, persistLocally]
+  );
+
+  const deletePushedDebt = useCallback(
+    (debtId: string) => {
+      const currentClosings = { ...(data.monthlyClosings || {}) };
+      let found = false;
+
+      Object.keys(currentClosings).forEach((m) => {
+        const closing = currentClosings[m];
+        if (closing?.pushedDebts?.some((d) => d.id === debtId)) {
+          found = true;
+          currentClosings[m] = {
+            ...closing,
+            pushedDebts: closing.pushedDebts.filter((d) => d.id !== debtId),
+          };
+        }
+      });
+
+      if (found) {
+        persistLocally({
+          ...data,
+          monthlyClosings: currentClosings,
+        });
+      }
+    },
+    [data, persistLocally]
+  );
+
   const resolveScheduledReminder = useCallback(
     (month: string, reminderId: string) => {
       const currentClosings = { ...(data.monthlyClosings || {}) };
@@ -1281,6 +1551,11 @@ function sanitizeAppData(loaded: AppData): AppData {
         convertCsvItemToTransaction(item, cardId, invoiceMonth)
       );
 
+      // ANTI-DUPLICIDADE: Excluir transações de projeção de rotativo criadas anteriormente para este cartão e mês
+      const filteredOldTransactions = data.cardTransactions.filter(
+        (t) => !(t.cardId === cardId && t.startMonth === invoiceMonth && t.isRotativoProjection)
+      );
+
       let updatedCards = [...data.creditCards];
       const nowIso = new Date().toISOString();
       const totalApproved = approvedItems.reduce((acc, curr) => acc + curr.amount, 0);
@@ -1313,7 +1588,7 @@ function sanitizeAppData(loaded: AppData): AppData {
       persistLocally({
         ...data,
         creditCards: updatedCards,
-        cardTransactions: [...data.cardTransactions, ...newTransactions],
+        cardTransactions: [...filteredOldTransactions, ...newTransactions],
       });
     },
     [data, persistLocally]
@@ -1459,6 +1734,7 @@ function sanitizeAppData(loaded: AppData): AppData {
         deleteExpense,
         toggleExpensePaid,
         toggleCardInvoicePaid,
+        payCardInvoiceWithRotativo,
         toggleExpenseReview,
         addCardTransaction,
         updateCardTransaction,
@@ -1489,6 +1765,9 @@ function sanitizeAppData(loaded: AppData): AppData {
         pushBillDebt,
         resolveScheduledReminder,
         resolvePushedDebt,
+        addDirectDebt,
+        settlePushedDebt,
+        deletePushedDebt,
 
         addBankAccount,
         updateBankAccount,

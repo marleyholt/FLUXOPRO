@@ -15,8 +15,11 @@ import {
   Clock,
   Layers,
   Building2,
-  User,
   Calendar,
+  Infinity as InfinityIcon,
+  Plus,
+  Trash2,
+  CheckCircle2,
 } from 'lucide-react';
 import {
   ComposedChart,
@@ -43,6 +46,9 @@ import {
   getMonthLabel,
   getMonthDiff,
 } from '../../utils/calculations';
+import { PushedDebtBill } from '../../types/finance';
+import { DirectDebtModal } from '../modals/DirectDebtModal';
+import { DebtSettlementModal } from '../modals/DebtSettlementModal';
 
 interface DashboardTabProps {
   onOpenNewTransaction: () => void;
@@ -63,6 +69,7 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
     toggleCardTransactionReview,
     setActiveTab,
     updateSettings,
+    deletePushedDebt,
   } = useFinance();
 
   const [chartViewMode, setChartViewMode] = useState<'composed' | 'area' | 'balance'>('composed');
@@ -70,7 +77,12 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
   const [extraAmortizationFuture, setExtraAmortizationFuture] = useState<number>(0);
 
   const [pushedSortBy, setPushedSortBy] = useState<'title-asc' | 'title-desc' | 'amount-desc' | 'amount-asc'>('amount-desc');
+  const [pushedStatusFilter, setPushedStatusFilter] = useState<'ALL' | 'PENDING' | 'PAID'>('PENDING');
   const [selectedPushedIds, setSelectedPushedIds] = useState<Set<string>>(new Set());
+
+  // Modais de Dívida Direta e Quitação/Negociação
+  const [isDirectDebtModalOpen, setIsDirectDebtModalOpen] = useState(false);
+  const [settlingDebt, setSettlingDebt] = useState<PushedDebtBill | null>(null);
 
   const [futureSortBy, setFutureSortBy] = useState<'title-asc' | 'title-desc' | 'amount-desc' | 'amount-asc'>('amount-desc');
   const [selectedFutureIds, setSelectedFutureIds] = useState<Set<string>>(new Set());
@@ -206,9 +218,9 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
   const activeScheduledReminders = Object.values(data.monthlyClosings || {})
     .flatMap((c) => c.scheduledReminders || [])
     .filter((r) => r.status === 'scheduled');
-  const activePushedDebts = Object.values(data.monthlyClosings || {})
-    .flatMap((c) => c.pushedDebts || [])
-    .filter((p) => p.status === 'pushed');
+  const allPushedDebts = Object.values(data.monthlyClosings || {})
+    .flatMap((c) => c.pushedDebts || []);
+  const activePushedDebts = allPushedDebts.filter((p) => p.status === 'pushed');
 
   // Future Debt Projection & Traceability
   interface DebtItem {
@@ -329,7 +341,13 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
   const totalFutureDebt = futureDebts.reduce((acc, curr) => acc + curr.totalRemainingDebt, 0);
 
   // Sorted & Filtered Pushed Debts
-  const sortedPushedDebts = [...activePushedDebts].sort((a, b) => {
+  const displayedPushedDebts = allPushedDebts.filter((p) => {
+    if (pushedStatusFilter === 'PENDING') return p.status === 'pushed';
+    if (pushedStatusFilter === 'PAID') return p.status === 'paid';
+    return true;
+  });
+
+  const sortedPushedDebts = [...displayedPushedDebts].sort((a, b) => {
     const rateA = a.interestRate || 0;
     const intTypeA = a.interestType || 'monthly';
     const monthsA = Math.max(1, getMonthDiff(a.month, a.targetMonth));
@@ -990,25 +1008,34 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
               Contas e obrigações reagendadas com projeção de juros e encargos de atraso
             </p>
           </div>
-          <span className="font-mono-numbers font-bold text-amber-400 text-xs">
-            Total Geral Acumulado: {formatBRL(
-              Object.values(data.monthlyClosings || {})
-                .flatMap((c) => c.pushedDebts || [])
-                .filter((p) => p.status === 'pushed')
-                .reduce((acc, p) => {
-                  const rate = p.interestRate || 0;
-                  const intType = p.interestType || 'monthly';
-                  const monthsDiff = Math.max(1, getMonthDiff(p.month, p.targetMonth));
-                  const daysDiff = monthsDiff * 30;
-                  const projectedInterest = rate > 0
-                    ? intType === 'monthly'
-                      ? p.amount * (rate / 100) * monthsDiff
-                      : p.amount * (rate / 100) * daysDiff
-                    : 0;
-                  return acc + p.amount + projectedInterest;
-                }, 0)
-            )}
-          </span>
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              onClick={() => setIsDirectDebtModalOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-bold transition shadow-sm"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>+ Cadastrar Dívida Atrasada</span>
+            </button>
+            <span className="font-mono-numbers font-bold text-amber-400 text-xs">
+              Total Geral Acumulado: {formatBRL(
+                Object.values(data.monthlyClosings || {})
+                  .flatMap((c) => c.pushedDebts || [])
+                  .filter((p) => p.status === 'pushed')
+                  .reduce((acc, p) => {
+                    const rate = p.interestRate || 0;
+                    const intType = p.interestType || 'monthly';
+                    const monthsDiff = Math.max(1, getMonthDiff(p.month, p.targetMonth));
+                    const daysDiff = monthsDiff * 30;
+                    const projectedInterest = rate > 0
+                      ? intType === 'monthly'
+                        ? p.amount * (rate / 100) * monthsDiff
+                        : p.amount * (rate / 100) * daysDiff
+                      : 0;
+                    return acc + p.amount + projectedInterest;
+                  }, 0)
+              )}
+            </span>
+          </div>
         </div>
 
         {/* Gráfico de Redução de Saldo Devedor & Simulador de Amortização Extra (Postergadas) */}
@@ -1097,32 +1124,75 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
           </div>
         )}
 
-        {activePushedDebts.length === 0 ? (
-          <div className="p-6 text-center text-xs text-zinc-400 bg-zinc-950/60 rounded-xl border border-zinc-800">
-            Nenhuma despesa ou conta postergada no momento.
+        {allPushedDebts.length === 0 ? (
+          <div className="p-6 text-center text-xs text-zinc-400 bg-zinc-950/60 rounded-xl border border-zinc-800 space-y-2">
+            <p>Nenhuma dívida ou conta atrasada cadastrada no momento.</p>
+            <button
+              onClick={() => setIsDirectDebtModalOpen(true)}
+              className="px-3 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 font-semibold text-xs transition inline-flex items-center gap-1.5"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Cadastrar Dívida Antiga / Saldo Atrasado
+            </button>
           </div>
         ) : (
           <div className="space-y-3">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-              <div className="flex items-center gap-2">
-                <span className="text-zinc-400 font-medium">Ordenar por:</span>
-                <select
-                  value={pushedSortBy}
-                  onChange={(e) => setPushedSortBy(e.target.value as any)}
-                  className="px-2.5 py-1 rounded-lg bg-zinc-950 border border-zinc-700 text-white font-medium outline-none focus:border-amber-500"
-                >
-                  <option value="amount-desc">Maior Valor (↓)</option>
-                  <option value="amount-asc">Menor Valor (↑)</option>
-                  <option value="title-asc">Alfabética (A-Z)</option>
-                  <option value="title-desc">Alfabética (Z-A)</option>
-                </select>
+              {/* Filtro de Status & Ordenação */}
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center p-0.5 rounded-lg bg-zinc-950 border border-zinc-800 text-[11px]">
+                  <button
+                    onClick={() => setPushedStatusFilter('PENDING')}
+                    className={`px-2.5 py-1 rounded-md font-medium transition ${
+                      pushedStatusFilter === 'PENDING'
+                        ? 'bg-amber-500/20 text-amber-300 font-bold'
+                        : 'text-zinc-400 hover:text-white'
+                    }`}
+                  >
+                    Pendentes ({activePushedDebts.length})
+                  </button>
+                  <button
+                    onClick={() => setPushedStatusFilter('PAID')}
+                    className={`px-2.5 py-1 rounded-md font-medium transition ${
+                      pushedStatusFilter === 'PAID'
+                        ? 'bg-emerald-500/20 text-emerald-300 font-bold'
+                        : 'text-zinc-400 hover:text-white'
+                    }`}
+                  >
+                    Quitadas ({allPushedDebts.filter((p) => p.status === 'paid').length})
+                  </button>
+                  <button
+                    onClick={() => setPushedStatusFilter('ALL')}
+                    className={`px-2.5 py-1 rounded-md font-medium transition ${
+                      pushedStatusFilter === 'ALL'
+                        ? 'bg-zinc-800 text-white font-bold'
+                        : 'text-zinc-400 hover:text-white'
+                    }`}
+                  >
+                    Todas ({allPushedDebts.length})
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <span className="text-zinc-400 font-medium">Ordenar:</span>
+                  <select
+                    value={pushedSortBy}
+                    onChange={(e) => setPushedSortBy(e.target.value as any)}
+                    className="px-2.5 py-1 rounded-lg bg-zinc-950 border border-zinc-700 text-white font-medium outline-none focus:border-amber-500"
+                  >
+                    <option value="amount-desc">Maior Valor (↓)</option>
+                    <option value="amount-asc">Menor Valor (↑)</option>
+                    <option value="title-asc">Alfabética (A-Z)</option>
+                    <option value="title-desc">Alfabética (Z-A)</option>
+                  </select>
+                </div>
               </div>
 
               {selectedPushedIds.size > 0 && (
                 <div className="text-amber-300 font-bold bg-amber-500/10 border border-amber-500/30 px-3 py-1 rounded-lg flex items-center gap-2">
-                  <span>Selecionadas: {selectedPushedIds.size} linha(s)</span>
+                  <span>Selecionadas: {selectedPushedIds.size}</span>
                   <span>•</span>
-                  <span>Soma Selecionada: {formatBRL(selectedPushedTotal)}</span>
+                  <span>Total: {formatBRL(selectedPushedTotal)}</span>
                   <button
                     onClick={() => setSelectedPushedIds(new Set())}
                     className="text-zinc-400 hover:text-white ml-2 text-[10px] underline"
@@ -1133,7 +1203,7 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
               )}
             </div>
 
-            <div className="border border-zinc-800 rounded-xl overflow-hidden bg-zinc-950 max-h-64 overflow-y-auto">
+            <div className="border border-zinc-800 rounded-xl overflow-hidden bg-zinc-950 max-h-72 overflow-y-auto">
               <table className="w-full text-left text-xs border-collapse">
                 <thead className="bg-zinc-900/90 text-zinc-400 sticky top-0 border-b border-zinc-800 z-10 font-semibold">
                   <tr>
@@ -1152,69 +1222,140 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
                         title="Selecionar todas"
                       />
                     </th>
-                    <th className="py-2.5 px-3">Compromisso</th>
-                    <th className="py-2.5 px-3">Mês Origem → Destino</th>
-                    <th className="py-2.5 px-3 text-right">Valor Original</th>
-                    <th className="py-2.5 px-3 text-right">Projeção de Juros</th>
-                    <th className="py-2.5 px-3 text-right">Total por Linha</th>
+                    <th className="py-2.5 px-3">Fonte / Credor</th>
+                    <th className="py-2.5 px-3">Compromisso / Dívida</th>
+                    <th className="py-2.5 px-3">Origem & Prazo Planejado</th>
+                    <th className="py-2.5 px-3 text-right">Saldo Original</th>
+                    <th className="py-2.5 px-3 text-right">Juros Projetados</th>
+                    <th className="py-2.5 px-3 text-right">Total Corrigido</th>
+                    <th className="py-2.5 px-3 text-center">Status / Ação</th>
+                    <th className="py-2.5 px-2 w-8 text-center"></th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-900">
-                  {sortedPushedDebts.map((p) => {
-                    const rate = p.interestRate || 0;
-                    const intType = p.interestType || 'monthly';
-                    const monthsDiff = Math.max(1, getMonthDiff(p.month, p.targetMonth));
-                    const daysDiff = monthsDiff * 30;
-                    const projectedInterest = rate > 0
-                      ? intType === 'monthly'
-                        ? p.amount * (rate / 100) * monthsDiff
-                        : p.amount * (rate / 100) * daysDiff
-                      : 0;
-                    const rowTotal = p.amount + projectedInterest;
-                    const isSelected = selectedPushedIds.has(p.id);
+                  {sortedPushedDebts.length === 0 ? (
+                    <tr>
+                      <td colSpan={9} className="py-6 text-center text-zinc-500">
+                        Nenhuma dívida encontrada neste filtro.
+                      </td>
+                    </tr>
+                  ) : (
+                    sortedPushedDebts.map((p) => {
+                      const rate = p.interestRate || 0;
+                      const intType = p.interestType || 'monthly';
+                      const monthsDiff = Math.max(1, getMonthDiff(p.month, p.targetMonth));
+                      const daysDiff = monthsDiff * 30;
+                      const projectedInterest = rate > 0
+                        ? intType === 'monthly'
+                          ? p.amount * (rate / 100) * monthsDiff
+                          : p.amount * (rate / 100) * daysDiff
+                        : 0;
+                      const rowTotal = p.amount + projectedInterest;
+                      const isSelected = selectedPushedIds.has(p.id);
+                      const isPaid = p.status === 'paid';
 
-                    return (
-                      <tr
-                        key={p.id}
-                        onClick={() => {
-                          const next = new Set(selectedPushedIds);
-                          if (isSelected) next.delete(p.id);
-                          else next.add(p.id);
-                          setSelectedPushedIds(next);
-                        }}
-                        className={`hover:bg-zinc-900/50 text-zinc-300 cursor-pointer transition ${
-                          isSelected ? 'bg-amber-500/10' : ''
-                        }`}
-                      >
-                        <td className="py-2 px-3 text-center" onClick={(e) => e.stopPropagation()}>
-                          <input
-                            type="checkbox"
-                            checked={isSelected}
-                            onChange={(e) => {
-                              const next = new Set(selectedPushedIds);
-                              if (e.target.checked) next.add(p.id);
-                              else next.delete(p.id);
-                              setSelectedPushedIds(next);
-                            }}
-                            className="rounded bg-zinc-900 border-zinc-700 text-amber-500 focus:ring-0 cursor-pointer"
-                          />
-                        </td>
-                        <td className="py-2 px-3 font-semibold text-white">{p.expenseTitle}</td>
-                        <td className="py-2 px-3 text-zinc-400">
-                          {getMonthLabel(p.month)} → <strong className="text-amber-400">{getMonthLabel(p.targetMonth)}</strong>
-                        </td>
-                        <td className="py-2 px-3 text-right font-mono-numbers text-zinc-200">
-                          {formatBRL(p.amount)}
-                        </td>
-                        <td className="py-2 px-3 text-right font-mono-numbers text-amber-400">
-                          {rate > 0 ? `+${formatBRL(projectedInterest)} (${rate}% ${intType === 'monthly' ? 'a.m.' : 'a.d.'})` : 'R$ 0,00'}
-                        </td>
-                        <td className="py-2 px-3 text-right font-mono-numbers font-bold text-white">
-                          {formatBRL(rowTotal)}
-                        </td>
-                      </tr>
-                    );
-                  })}
+                      return (
+                        <tr
+                          key={p.id}
+                          onClick={() => {
+                            const next = new Set(selectedPushedIds);
+                            if (isSelected) next.delete(p.id);
+                            else next.add(p.id);
+                            setSelectedPushedIds(next);
+                          }}
+                          className={`hover:bg-zinc-900/50 text-zinc-300 cursor-pointer transition ${
+                            isSelected ? 'bg-amber-500/10' : ''
+                          } ${isPaid ? 'opacity-65' : ''}`}
+                        >
+                          <td className="py-2 px-3 text-center" onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={(e) => {
+                                const next = new Set(selectedPushedIds);
+                                if (e.target.checked) next.add(p.id);
+                                else next.delete(p.id);
+                                setSelectedPushedIds(next);
+                              }}
+                              className="rounded bg-zinc-900 border-zinc-700 text-amber-500 focus:ring-0 cursor-pointer"
+                            />
+                          </td>
+                          <td className="py-2 px-3">
+                            <span className="font-semibold text-amber-300 block">
+                              {p.creditorSource || (p.type === 'card' ? 'Cartão de Crédito' : 'Despesa')}
+                            </span>
+                          </td>
+                          <td className="py-2 px-3 font-medium text-white">
+                            {p.expenseTitle}
+                            {p.isDirectDebt && (
+                              <span className="ml-1.5 text-[9px] px-1 py-0.2 rounded bg-zinc-800 text-zinc-400">
+                                Passado
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-2 px-3 text-zinc-400">
+                            {p.isDirectDebt && !p.targetEndMonth ? (
+                              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/10 text-amber-300 border border-amber-500/20 inline-flex items-center gap-1">
+                                <InfinityIcon className="w-3 h-3" /> Indeterminado
+                              </span>
+                            ) : p.targetEndMonth ? (
+                              <span>
+                                {p.startDate ? p.startDate.slice(0, 7) : getMonthLabel(p.month)} →{' '}
+                                <strong className="text-amber-400">{getMonthLabel(p.targetEndMonth)}</strong>
+                              </span>
+                            ) : (
+                              <span>
+                                {getMonthLabel(p.month)} →{' '}
+                                <strong className="text-amber-400">{getMonthLabel(p.targetMonth)}</strong>
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-2 px-3 text-right font-mono-numbers text-zinc-200">
+                            {formatBRL(p.amount)}
+                          </td>
+                          <td className="py-2 px-3 text-right font-mono-numbers text-amber-400">
+                            {rate > 0
+                              ? `+${formatBRL(projectedInterest)} (${rate}% ${intType === 'monthly' ? 'a.m.' : 'a.d.'})`
+                              : 'R$ 0,00'}
+                          </td>
+                          <td className="py-2 px-3 text-right font-mono-numbers font-bold text-white">
+                            {formatBRL(rowTotal)}
+                          </td>
+                          <td className="py-2 px-3 text-center" onClick={(e) => e.stopPropagation()}>
+                            {!isPaid ? (
+                              <button
+                                onClick={() => setSettlingDebt(p)}
+                                className="px-2.5 py-1 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 text-[11px] font-bold transition flex items-center gap-1 mx-auto"
+                              >
+                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                                Quitar / Negociar
+                              </button>
+                            ) : (
+                              <div className="flex flex-col items-center">
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                                  ✓ Quitada
+                                </span>
+                                {p.isNegotiated && p.negotiationDiscount && p.negotiationDiscount > 0 && (
+                                  <span className="text-[9px] text-emerald-400/90 font-medium mt-0.5">
+                                    Eco: {formatBRL(p.negotiationDiscount)}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </td>
+                          <td className="py-2 px-2 text-center" onClick={(e) => e.stopPropagation()}>
+                            <button
+                              onClick={() => deletePushedDebt(p.id)}
+                              className="p-1 rounded text-zinc-500 hover:text-rose-400 hover:bg-zinc-900 transition"
+                              title="Excluir dívida"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
                 </tbody>
               </table>
             </div>
@@ -1437,6 +1578,21 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
           </div>
         )}
       </div>
+
+      {/* Modal de Cadastro Direto de Dívidas Atrasadas */}
+      <DirectDebtModal
+        isOpen={isDirectDebtModalOpen}
+        onClose={() => setIsDirectDebtModalOpen(false)}
+      />
+
+      {/* Modal de Quitação e Negociação de Dívidas */}
+      {settlingDebt && (
+        <DebtSettlementModal
+          isOpen={!!settlingDebt}
+          onClose={() => setSettlingDebt(null)}
+          debt={settlingDebt}
+        />
+      )}
     </div>
   );
 };

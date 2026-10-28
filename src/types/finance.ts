@@ -114,6 +114,8 @@ export interface CardTransaction {
   linkedSubItemId?: string; // ID do subitem de previsão vinculado
   linkedExpenseId?: string; // ID da conta/despesa de previsão vinculada
   isUnplanned?: boolean; // Se true, marcado como despesa sem previsão
+  isRotativoProjection?: boolean; // Se true, criado pela projeção do rotativo do cartão
+  rotativoSourceMonth?: string; // Mês da fatura que originou o rotativo (ex: 2026-10)
 }
 
 export interface MonthSummary {
@@ -154,14 +156,25 @@ export interface PushedDebtBill {
   expenseTitle: string;
   amount: number;
   month: string; // YYYY-MM original
-  targetMonth: string; // YYYY-MM target postponement month
+  targetMonth: string; // YYYY-MM target postponement month (ou mês planejado de quitação)
   pushedAt: string;
   reason?: string;
   status: 'pushed' | 'paid';
-  type?: 'expense' | 'card' | 'subitem';
+  type?: 'expense' | 'card' | 'subitem' | 'direct_debt';
   cardId?: string;
   interestRate?: number;
   interestType?: 'daily' | 'monthly';
+  // Campos para cadastro direto de dívidas e contas atrasadas do passado:
+  creditorSource?: string; // Credor / Fonte (ex: Banco X, Fornecedor Y)
+  startDate?: string; // Data de início da dívida
+  targetEndMonth?: string; // Mês limite planejado de manutenção (vazio se indeterminado)
+  isDirectDebt?: boolean; // Marcador de cadastro direto
+  // Campos de quitação e negociação:
+  isNegotiated?: boolean; // Se foi quitada com negociação/desconto
+  actualPaidAmount?: number; // Valor efetivamente pago após negociação
+  negotiationDiscount?: number; // Valor economizado
+  paidDate?: string; // Data do pagamento
+  negotiationNotes?: string; // Anotações do acordo/negociação
 }
 
 export interface BankStatementUploadRecord {
