@@ -203,10 +203,11 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
     const cardBillAmount = current.cardTotalsByCard[card.id] || 0;
     if (cardBillAmount > 0) {
       const status = card.invoicePaymentStatusByMonth?.[selectedMonth];
-      const isPaid = status === 'paid_on_time' || status === 'paid_late';
+      const isPaid = status === 'paid_on_time' || status === 'paid_late' || status === 'partial_late';
+      const paidAmt = card.invoicePaidAmountByMonth?.[selectedMonth];
       if (isPaid) {
         billsPaidCount++;
-        billsPaidAmount += cardBillAmount;
+        billsPaidAmount += (paidAmt !== undefined ? paidAmt : cardBillAmount);
       } else {
         billsPendingCount++;
         billsPendingAmount += cardBillAmount;

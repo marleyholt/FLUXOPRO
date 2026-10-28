@@ -125,6 +125,8 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
     isPaid: boolean;
     installmentText?: string;
     originalExpense?: Expense;
+    isPartial?: boolean;
+    paidAmount?: number;
   }
 
   const checklistItems: ChecklistItem[] = [];
@@ -177,7 +179,9 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
     const cardBillAmount = current.cardTotalsByCard[card.id] || 0;
     if (cardBillAmount > 0) {
       const status = card.invoicePaymentStatusByMonth?.[selectedMonth];
-      const isCardPaid = status === 'paid_on_time' || status === 'paid_late';
+      const isCardPaid = status === 'paid_on_time' || status === 'paid_late' || status === 'partial_late';
+      const paidAmt = card.invoicePaidAmountByMonth?.[selectedMonth];
+      const isPartial = status === 'partial_late';
       checklistItems.push({
         id: `card-bill-${card.id}`,
         type: 'card',
@@ -187,7 +191,11 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
         category: 'Cartão de Crédito',
         scope: card.scope,
         isPaid: isCardPaid,
-        installmentText: `Banco: ${card.bank || 'Cartão'}`,
+        installmentText: isPartial && paidAmt
+          ? `Pago ${formatBRL(paidAmt)} (Rotativo)`
+          : `Banco: ${card.bank || 'Cartão'}`,
+        isPartial,
+        paidAmount: paidAmt,
       });
     }
   });
@@ -204,7 +212,7 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
   const totalAmountBills = checklistItems.reduce((acc, curr) => acc + curr.amount, 0);
   const totalPaidAmount = checklistItems
     .filter((i) => i.isPaid)
-    .reduce((acc, curr) => acc + curr.amount, 0);
+    .reduce((acc, curr) => acc + (curr.paidAmount !== undefined ? curr.paidAmount : curr.amount), 0);
   const remainingAmountToPay = Math.max(0, totalAmountBills - totalPaidAmount);
 
   // Envelopes statistics: Planned (Previsão) vs Actual (Gasto Real)
@@ -564,10 +572,14 @@ export const MonthlyControlTab: React.FC<MonthlyControlTabProps> = ({
                         </span>
                         <span
                           className={`text-[10px] font-medium ${
-                            item.isPaid ? 'text-emerald-400' : 'text-amber-400'
+                            item.isPaid
+                              ? item.isPartial
+                                ? 'text-amber-400'
+                                : 'text-emerald-400'
+                              : 'text-amber-400'
                           }`}
                         >
-                          {item.isPaid ? 'Pago' : 'Pendente'}
+                          {item.isPaid ? (item.isPartial ? 'Pago (Rotativo)' : 'Pago') : 'Pendente'}
                         </span>
                       </div>
 

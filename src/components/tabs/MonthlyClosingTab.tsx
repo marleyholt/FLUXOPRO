@@ -306,7 +306,7 @@ export const MonthlyClosingTab: React.FC = () => {
       const invoiceAmt = realInv !== undefined ? Math.max(realInv, cardDetailedSum) : cardDetailedSum;
 
       const status = card.invoicePaymentStatusByMonth?.[pastM];
-      const isPaid = status === 'paid_on_time' || status === 'paid_late';
+      const isPaid = status === 'paid_on_time' || status === 'paid_late' || status === 'partial_late';
 
       if (invoiceAmt > 0 && !isPaid) {
         const alreadyAdded = pastUnpaidBills.some((b) => b.expenseId === card.id && b.month === pastM);
