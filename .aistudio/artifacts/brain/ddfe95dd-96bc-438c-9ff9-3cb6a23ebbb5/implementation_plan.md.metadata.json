@@ -1,6 +1,6 @@
 {
-  "summary":  "Plano de implementação revisado com a nova regra de negócio:\n1) Exclusão automática de lançamentos projetados de rotativo (Saldo + Juros) quando a fatura real for importada/consolidada para aquele mês e cartão, eliminando duplicidade.\n2) Fluxo completo de Pagamento Parcial de Fatura de Cartão de Crédito e Projeção do Rotativo.\n3) Cadastro Direto de Dívidas e Contas Atrasadas do Passado com suporte a taxa de juros, prazo indeterminado e quitação negociada com cálculo de desconto.",
-  "updatedAt":  "2026-10-28T12:17:35.564159257Z",
+  "summary":  "Plano de implementação para o Sistema de Versões Semanais de Fatura de Cartão de Crédito, Barra Flutuante de Cartões e Versões, Download de Modelo CSV Padrão e Campos de Metadados de Extrato (Data, Nome e Observações).",
+  "updatedAt":  "2026-10-30T17:11:10.187108190Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

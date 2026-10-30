@@ -1,108 +1,119 @@
-# Plano de Implementação Revisado: Rotativo de Cartão & Cadastro Direto de Dívidas Passadas
+# Sistema de Versões de Faturas, Barra Flutuante e Gestão Dinâmica de Cartões de Crédito
 
-Este plano atualizado incorpora a regra estrita de negócio solicitada: **as transações projetadas de rotativo e juros serão automaticamente removidas quando a fatura real daquele mês for importada no sistema**, garantindo que não haja qualquer duplicidade de lançamentos.
+Permitir o acompanhamento semanal e contínuo das faturas de cartão de crédito através de versões históricas alternáveis (snapshots), barra flutuante inferior para navegação ágil, download de modelo CSV padrão e campos detalhados de metadados na importação (data da retirada, nome da versão e observações).
 
----
+## User Review & Critical Decisions
 
-## 1. Visão Geral das Funcionalidades
-
-### Funcionalidade 1: Gestão de Rotativo de Cartão & Limpeza Automática pós-Importação
-- **Ao pagar a fatura no Checklist**:
-  - Modal pergunta se o pagamento foi **Integral** ou **Parcial**.
-  - Se parcial: usuário digita o valor pago; o sistema calcula o saldo rotativado (`total - pago`).
-  - Alerta preventivo caso a fatura do mês anterior já estivesse em rotativo.
-  - O sistema calcula os juros com a fórmula: `valor rotativado * (taxa % do cartão) = Juros do Rotativo`.
-  - São criadas 2 transações discriminadas no cartão para o mês seguinte:
-    1. `Saldo Rotativo Fatura [Mês]` (com tag `isRotativoProjection: true`)
-    2. `Juros Rotativo [Mês] (X% a.m.)` (com tag `isRotativoProjection: true`)
-- **Regra de Exclusão Automática (Anti-Duplicidade)**:
-  - Quando a fatura real daquele mês for importada via CSV/extrato bancário (ou quando o usuário consolidar a fatura real), o sistema **remove automaticamente** quaisquer transações marcadas como `isRotativoProjection` daquele cartão e mês, já que a fatura real importada já virá com os encargos definitivos cobrados pelo banco.
-
-### Funcionalidade 2: Cadastro Direto de Dívidas Anteriores (Passado/Postergadas)
-- Permite registrar dívidas trazidas do passado sem precisar navegar para meses anteriores.
-- Botão "+ Cadastrar Dívida Atrasada" disponível em **ambos os locais**:
-  - No card de *Projeção de Dívidas e Contas Atrasadas (Postergadas)* no **Dashboard**;
-  - Na barra de ações do **Controle Mensal**.
-- **Campos**:
-  - Fonte / Credor (ex: "Banco do Brasil", "Empréstimo Familiar", "Fornecedor X")
-  - Título / Descrição
-  - Valor Principal
-  - Data de Início da Dívida
-  - Taxa de Juros de Atraso (% a.m. ou % a.d.)
-  - Vigência Projetada: seletor de Mês/Ano limite de manutenção **OU** opção "Indeterminado / Até eu pagar".
-- **Fluxo de Quitação & Negociação**:
-  - Botão de registrar pagamento na tabela de dívidas.
-  - Pergunta se houve negociação; permite informar o valor negociado efetivamente pago.
-  - Exibe a economia/desconto obtido em reais e porcentagem.
-  - Atualiza o status para "Paga" e mantém o histórico na projeção.
+> [!IMPORTANT]
+> **Decisões confirmadas pelo usuário na Fase 1:**
+> 1. **Gerenciamento de Versões:** Salvar cada importação de extrato/CSV como uma versão completa (snapshot), permitindo alternar livremente entre as versões (ex.: Semana 1, Semana 2, Fatura Final) sem perda de histórico.
+> 2. **Interface de Navegação:** Implementação de uma barra flutuante inferior fixa com seletor rápido de cartão e controle de versão ativa.
+> 3. **Reflexo em Cascata no Sistema:** A versão selecionada substitui os lançamentos daquele cartão e mês em **todo o sistema** (Central de Cartões, Matriz Anual, Previsão Orçamentária e Controle Mensal).
+> 4. **Segurança de Sincronização Firebase:** As importações e alternâncias de versões atualizam imediatamente a projeção local (sem latência), mas só gravam no Firestore quando o usuário acionar o botão de salvar.
 
 ---
 
-## 2. Detalhamento Técnico das Modificações
+## 1. Visão Geral & Conceito Central
 
-### A. Tipos de Dados (`src/types/finance.ts`)
-- **`CardTransaction`**:
-  - `isRotativoProjection?: boolean` (identifica transações geradas pela projeção de rotativo)
-  - `rotativoSourceMonth?: string` (mês de origem que gerou o saldo rotativo)
-- **`PushedDebtBill`**:
-  - `creditorSource?: string` (Nome do credor / fonte)
-  - `startDate?: string` (Data original da dívida)
-  - `targetEndMonth?: string` (Mês limite planejado; ausente/vazio se indeterminado)
-  - `isDirectDebt?: boolean` (Flag indicando lançamento direto)
-  - `isNegotiated?: boolean` (Se houve negociação no pagamento)
-  - `actualPaidAmount?: number` (Valor final pago)
-  - `negotiationDiscount?: number` (Economia obtida)
-  - `paidDate?: string` (Data em que foi quitada)
-  - `negotiationNotes?: string` (Notas e acordos da quitação)
-
-### B. Lógica de Contexto (`src/context/FinanceContext.tsx`)
-1. **`payCardInvoiceWithRotativo`**:
-   - Registra o pagamento (integral ou parcial) no mês da fatura.
-   - Se parcial: gera as duas transações projetadas no mês seguinte com `isRotativoProjection: true`.
-2. **`importCsvTransactions` & `setCardRealInvoice` (Regra Anti-Duplicidade)**:
-   - Ao importar transações ou salvar a fatura real para `cardId` no mês `invoiceMonth`:
-   - Executa filtro para **excluir** `data.cardTransactions` onde:
-     `t.cardId === cardId && t.startMonth === invoiceMonth && t.isRotativoProjection === true`.
-3. **`addDirectDebt`**:
-   - Cria uma nova `PushedDebtBill` associada ao controle de dívidas com status `'pushed'`, campos de credor, taxa de juros e data limite (ou indeterminada).
-4. **`settlePushedDebt`**:
-   - Atualiza a dívida para `'paid'`, grava `actualPaidAmount`, `isNegotiated`, `paidDate` e anotações.
-5. **`deletePushedDebt`**:
-   - Permite exclusão de dívidas cadastradas.
-
-### C. Componentes de Interface (UI)
-1. **`CardInvoicePaymentModal.tsx`**:
-   - Acionado ao clicar no checkbox de uma fatura de cartão no Checklist.
-   - Permite escolher pagamento Integral ou Parcial.
-   - Mostra alerta caso o mês anterior já estivesse em rotativo.
-   - Calcula o valor rotativado e juros automaticamente com base na taxa `% a.m.` cadastrada no cartão.
-2. **`DirectDebtModal.tsx`**:
-   - Modal para cadastrar uma nova dívida ou conta atrasada trazida do passado.
-   - Campos de credor, valor, data início, taxa de juros e seletor de data de término ou "Indeterminado".
-3. **`DebtSettlementModal.tsx`**:
-   - Modal para liquidar uma dívida postergada com campos de valor original, valor negociado, data e notas.
-4. **`DashboardTab.tsx`**:
-   - Adição do botão "+ Cadastrar Dívida Atrasada" no cabeçalho do card de Projeção de Dívidas.
-   - Exibição de Credor, Data de Início, Prazo Projetado (ou badge "Indeterminado") e ações de quitação.
-5. **`MonthlyControlTab.tsx`**:
-   - Botão de acesso rápido "+ Dívida Atrasada" na área de ações.
-   - Conexão do novo modal de pagamento com rotativo no checklist.
+- **O que faz:** Transforma o módulo de cartões de crédito de uma ferramenta mensal estática em um **centro de acompanhamento dinâmico e contínuo**. O usuário pode importar extratos semanalmente ou a qualquer momento, salvando cada importação como uma versão nomeada (ex.: "Semana 1 - Prévia", "Semana 2", "Fatura Fechada").
+- **Público / Contexto:** Usuários e gestores financeiros que realizam controle orçamentário preditivo ao longo do mês e precisam saber como os gastos em tempo real afetam o fluxo de caixa futuro antes do fechamento oficial da fatura.
+- **Valor Agregado:** Elimina a limitação de analisar a fatura apenas uma vez no mês. Garante comparabilidade entre previsões parciais e o valor consolidado final, mantendo a integridade total da Matriz Anual.
 
 ---
 
-## 3. Plano de Verificação
+## 2. Experiência do Usuário & Design Visual
 
-### Testes Manuais & Funcionais
-1. **Verificação da Regra de Rotativo & Exclusão na Importação Real**:
-   - Fazer pagamento parcial de R$ 500 em uma fatura de R$ 1.500 no cartão com 10% a.m. de taxa.
-   - Verificar no mês seguinte a presença dos 2 itens discriminados (`Saldo Rotativo: R$ 1.000` e `Juros: R$ 100`).
-   - Simular a importação de CSV da fatura real para o mês seguinte:
-     - Conferir se os 2 lançamentos projetados de rotativo somem automaticamente do sistema, deixando apenas os itens reais da fatura.
-2. **Alerta de Rotativo Consecutivo**:
-   - Ao tentar pagar parcialmente novamente no segundo mês consecutivo, validar a exibição do alerta amarelo de risco de juros compostos.
-3. **Verificação de Cadastro de Dívidas**:
-   - Cadastrar dívida anterior através do botão do Dashboard e conferir se ela aparece imediatamente na tabela.
-   - Cadastrar outra dívida através do botão do Controle Mensal com opção "Indeterminado / Até eu pagar".
-   - Realizar a quitação com negociação e validar o cálculo da economia e mudança de status para "Paga".
-4. **Compilação e Linter**:
-   - Executar `lint_applet` e `compile_applet` para garantir código limpo e sem erros de TypeScript.
+### Fluxos Principais do Usuário
+
+1. **Download do Modelo CSV Padrão:**
+   - Na Central de Cartões e no Modal de Importação, haverá o botão **"Baixar Modelo CSV Padrão"**.
+   - O arquivo gerado traz colunas universais compatíveis (`Data;Descricao;Valor;Parcela;Categoria`), com dados de exemplo prontos para Excel ou Google Sheets.
+
+2. **Importação Enriquecida de Nova Versão:**
+   - O modal de importação passa a solicitar:
+     - **Data de Extração do Extrato** (ex.: `2026-10-15`).
+     - **Nome da Versão** (sugestão automática: `"Prévia 15/10"` ou editável pelo usuário, como `"Semana 2"`).
+     - **Observações** (ex.: *"Não inclui compras do fim de semana"*).
+   - Ao confirmar, o sistema gera uma nova versão de fatura, preservando a versão anterior e tornando a recém-importada a **versão ativa**.
+
+3. **Barra Flutuante Inferior (Dock de Cartões & Versões):**
+   - Fixada na parte inferior da tela com acabamento escuro sofisticado (`bg-zinc-900/95 backdrop-blur-md border border-zinc-800`), contendo:
+     - **Seletor Rápido de Cartão:** Abas compactas com o nome e bandeira do cartão.
+     - **Controle de Versão Ativa:** Dropdown ou pílula interativa mostrando a versão atual (ex.: `v2: Semana 2 (15/10) - R$ 3.450,00`).
+     - **Botão "Gerenciar Versões":** Abre o modal comparativo para inspecionar, renomear, alternar ou excluir versões salvas.
+     - **Indicador de Sincronização:** Lembrete visual para salvar no Firebase ao concluir ajustes.
+
+4. **Reflexo Imediato em Todo o Sistema:**
+   - Ao trocar a versão ativa de um cartão para determinado mês, os valores de transações, faturas e projeções são recalculados instantaneamente:
+     - Na **Matriz Anual**, a linha daquele cartão e o total de despesas passam a espelhar a versão selecionada.
+     - No **Controle Mensal**, o teto de gastos e faturas mostram o total da versão ativa.
+     - Na **Central de Cartões**, a listagem de compras exibe os lançamentos da versão ativa.
+
+---
+
+## 3. Decisões de Produto & Trade-Offs
+
+### Decisão 1: Armazenamento por Snapshots Completos vs. Histórico Diferencial
+- **Abordagem Escolhida:** Cada versão armazena o conjunto integral de transações daquela importação (`CardTransaction[]`) juntamente com o total da fatura e os metadados.
+- **Por quê:** Permite ao usuário alternar instantaneamente entre a "Semana 1" e a "Fatura Final" sem risco de duplicidade de compras ou corrupção de lançamentos manuais adicionados posteriormente.
+- **Alternativa Descartada:** Salvar apenas um diff incremental, que geraria complexidade desnecessária e inconsistências em caso de lançamentos cancelados no banco.
+
+### Decisão 2: Persistência Local Imediata com Commit Explícito no Firebase
+- **Abordagem Escolhida:** Alterações de versão e novas importações atualizam o estado em memória e no cache local imediatamente, recalculando os relatórios em $\approx 0\text{ms}$. O envio ao Firestore ocorre apenas com o botão "Salvar".
+- **Por quê:** Atende à diretriz expressa do usuário de evitar requisições desnecessárias ao Firebase enquanto estiver explorando e alternando entre versões semanais.
+
+---
+
+## 4. Arquitetura Técnica & Estrutura de Dados
+
+### Diagrama do Sistema
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                        Barra Flutuante Inferior                        │
+│   [ Cartão: Nubank ▼ ]  │  [ Versão Ativa: Semana 2 (15/10) ▼ ]        │
+│   [ + Importar CSV ]    │  [ ⬇ Baixar Modelo ]  │  [ 💾 Salvar Cloud ] │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │ Altera versão ativa
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│                      FinanceContext (Estado Global)                    │
+│  - CreditCards: activeInvoiceVersionIdByMonth                          │
+│  - CreditCards: invoiceVersionsByMonth[month] -> InvoiceVersion[]      │
+│  - CardTransactions: sincronizadas dinamicamente com a versão ativa    │
+└───────────────────┬───────────────────────────────┬────────────────────┘
+                    │                               │
+                    ▼                               ▼
+       ┌────────────────────────┐       ┌────────────────────────┐
+       │   Matriz Anual (Tab)   │       │ Central Cartões (Tab)  │
+       │ Projeção atualizada    │       │ Compras da versão      │
+       │ com o valor da versão  │       │ exibidas no filtro     │
+       └────────────────────────┘       └────────────────────────┘
+```
+
+### Novos Tipos de Dados
+
+```typescript
+export interface InvoiceVersion {
+  id: string;                    // ID único da versão (ex: 'ver-173000-xyz')
+  cardId: string;                // ID do cartão
+  month: string;                 // Mês de referência (ex: '2026-10')
+  name: string;                  // Nome amigável (ex: 'Semana 2 - Prévia')
+  statementDate: string;         // Data de extração do extrato (YYYY-MM-DD)
+  createdAt: string;             // Data de criação (ISO string)
+  notes?: string;                // Observações adicionais
+  totalAmount: number;           // Total consolidado da fatura nesta versão
+  transactionCount: number;      // Quantidade de transações
+  transactions: CardTransaction[]; // Snapshot completo das compras
+}
+```
+
+Atualização no tipo `CreditCard`:
+- `invoiceVersionsByMonth?: Record<string, InvoiceVersion[]>`
+- `activeInvoiceVersionIdByMonth?: Record<string, string>`
+
+### Mapeamento das Ações no Contexto
+- `importCsvTransactionsWithVersion`: Processa o CSV, cria a nova versão com nome, data e notas, e define-a como ativa.
+- `setActiveInvoiceVersion`: Alterna a versão ativa para determinado cartão e mês, atualizando o pool de `cardTransactions` para refletir os itens daquela versão.
+- `deleteInvoiceVersion`: Remove uma versão específica sem apagar as demais.
+- `generateStandardCsvTemplate`: Gera e dispara o download do arquivo CSV modelo no navegador.

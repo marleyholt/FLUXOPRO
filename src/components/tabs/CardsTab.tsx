@@ -19,6 +19,8 @@ import {
   CheckSquare,
   Square,
   Tag,
+  History,
+  Download,
 } from 'lucide-react';
 import { useFinance } from '../../context/FinanceContext';
 import {
@@ -29,6 +31,8 @@ import {
   getMonthLabel,
 } from '../../utils/calculations';
 import { CardTransaction } from '../../types/finance';
+import { InvoiceVersionsModal } from '../modals/InvoiceVersionsModal';
+import { downloadStandardCsvTemplate } from '../../utils/csvTemplate';
 
 interface CardsTabProps {
   onOpenNewTransaction: (cardId?: string) => void;
@@ -53,6 +57,10 @@ export const CardsTab: React.FC<CardsTabProps> = ({
     bulkDeleteCardTransactions,
     setCardRealInvoice,
     updateCreditCardTrend,
+    hasUnsavedChanges,
+    saveToFirebase,
+    isSavingToFirebase,
+    setActiveInvoiceVersion,
   } = useFinance();
 
   const [selectedCardId, setSelectedCardId] = useState<string>(
@@ -61,6 +69,7 @@ export const CardsTab: React.FC<CardsTabProps> = ({
   const [filterType, setFilterType] = useState<
     'ALL' | 'INSTALLMENT' | 'RECURRING' | 'REVIEW'
   >('ALL');
+  const [isVersionsModalOpen, setIsVersionsModalOpen] = useState(false);
 
   // Modal para editar lançamento
   const [editingTx, setEditingTx] = useState<CardTransaction | null>(null);
@@ -79,6 +88,12 @@ export const CardsTab: React.FC<CardsTabProps> = ({
   const current = currentMonthSummary || summaries[0];
   const activeCard =
     data.creditCards.find((c) => c.id === selectedCardId) || data.creditCards[0];
+
+  const cardVersionsThisMonth = activeCard?.invoiceVersionsByMonth?.[selectedMonth] || [];
+  const activeVersionId = activeCard?.activeInvoiceVersionIdByMonth?.[selectedMonth];
+  const currentActiveVersion =
+    cardVersionsThisMonth.find((v) => v.id === activeVersionId) ||
+    (cardVersionsThisMonth.length > 0 ? cardVersionsThisMonth[cardVersionsThisMonth.length - 1] : undefined);
 
   if (!activeCard) {
     return (
@@ -315,15 +330,57 @@ export const CardsTab: React.FC<CardsTabProps> = ({
               <CreditCardIcon className="w-6 h-6" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-white flex items-center gap-2">
+              <h2
+                onClick={() => setIsVersionsModalOpen(true)}
+                className="text-base font-bold text-white flex items-center gap-2 cursor-pointer hover:text-emerald-400 transition group"
+                title="Clique para gerenciar versões desta fatura"
+              >
                 <span>{activeCard.name}</span>
                 <span className="text-xs font-semibold px-2 py-0.5 rounded bg-zinc-800 text-zinc-300">
                   {activeCard.scope}
                 </span>
+                <History className="w-3.5 h-3.5 text-zinc-500 group-hover:text-emerald-400 transition" />
               </h2>
               <p className="text-xs text-zinc-400">
                 Fatura de <strong>{current.label} ({selectedMonth})</strong> • Fechamento: Dia {activeCard.closingDay} | Vencimento: Dia {activeCard.dueDay}
               </p>
+
+              {/* Version Pill & Action Buttons */}
+              <div className="flex flex-wrap items-center gap-2 mt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsVersionsModalOpen(true)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition flex items-center gap-1.5 ${
+                    currentActiveVersion
+                      ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-300 hover:bg-emerald-900/50'
+                      : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-800'
+                  }`}
+                  title="Abrir gerenciador de versões da fatura"
+                >
+                  <History className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>
+                    Versão: <strong className="text-white">{currentActiveVersion ? currentActiveVersion.name : 'Padrão / Sem Versão'}</strong>
+                  </span>
+                  {currentActiveVersion && (
+                    <span className="text-[10px] text-zinc-400">
+                      ({currentActiveVersion.statementDate})
+                    </span>
+                  )}
+                  <span className="px-1.5 py-0.2 rounded bg-zinc-800 text-[10px] text-zinc-300 ml-1">
+                    {cardVersionsThisMonth.length} salvas
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={downloadStandardCsvTemplate}
+                  className="px-2.5 py-1 rounded-lg bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-white text-xs font-medium transition flex items-center gap-1.5"
+                  title="Baixar arquivo modelo CSV para preenchimento"
+                >
+                  <Download className="w-3.5 h-3.5 text-emerald-400" />
+                  Baixar Modelo CSV
+                </button>
+              </div>
             </div>
           </div>
 
@@ -946,6 +1003,127 @@ export const CardsTab: React.FC<CardsTabProps> = ({
         </div>
       )}
 
+      {/* BARRA FLUTUANTE INFERIOR FIXA DE CARTÕES E VERSÕES */}
+      <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 max-w-5xl w-[96%] sm:w-auto shadow-2xl rounded-2xl bg-zinc-950/95 border border-zinc-700/80 backdrop-blur-md px-3.5 py-2 flex flex-wrap sm:flex-nowrap items-center justify-between gap-3 text-xs animate-in fade-in slide-in-from-bottom-3 duration-200">
+        {/* Left: Lista Flutuante de Cartões */}
+        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+          <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider hidden md:inline mr-1">
+            Cartões:
+          </span>
+          {data.creditCards.map((card) => {
+            const isSelected = card.id === activeCard.id;
+            const invoiceAmt = current.cardTotalsByCard[card.id] || 0;
+            const vers = card.invoiceVersionsByMonth?.[selectedMonth] || [];
+            return (
+              <button
+                key={card.id}
+                onClick={() => setSelectedCardId(card.id)}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border font-semibold whitespace-nowrap transition ${
+                  isSelected
+                    ? 'bg-zinc-800 border-zinc-600 text-white shadow-sm ring-1 ring-emerald-400/40'
+                    : 'bg-zinc-900/80 border-zinc-800 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-850'
+                }`}
+                title={`Selecionar ${card.name}`}
+              >
+                <span
+                  className="w-2.5 h-2.5 rounded-full shrink-0"
+                  style={{ backgroundColor: card.color || '#3b82f6' }}
+                />
+                <span>{card.name}</span>
+                <span className="font-mono-numbers text-[11px] font-bold text-zinc-300">
+                  {formatBRL(invoiceAmt)}
+                </span>
+                {vers.length > 0 && (
+                  <span className="px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-400 text-[9px] font-bold border border-emerald-500/30">
+                    v{vers.length}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Center / Right: Seletor de Versão + Ações Rápidas */}
+        <div className="flex items-center gap-2 ml-auto shrink-0">
+          {/* Seletor rápido de versão */}
+          {cardVersionsThisMonth.length > 0 ? (
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-zinc-900 border border-zinc-700/80">
+              <History className="w-3.5 h-3.5 text-emerald-400" />
+              <select
+                value={activeVersionId || cardVersionsThisMonth[cardVersionsThisMonth.length - 1]?.id || ''}
+                onChange={(e) => setActiveInvoiceVersion(activeCard.id, selectedMonth, e.target.value)}
+                className="bg-transparent text-white font-semibold text-xs outline-none cursor-pointer max-w-[150px] truncate"
+                title="Alternar versão ativa visualizada em todo o sistema"
+              >
+                {cardVersionsThisMonth.map((v) => (
+                  <option key={v.id} value={v.id} className="bg-zinc-900 text-white">
+                    {v.name} ({formatBRL(v.totalAmount)})
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => setIsVersionsModalOpen(true)}
+                className="p-1 rounded text-zinc-400 hover:text-white"
+                title="Abrir modal completo de versões"
+              >
+                <History className="w-3 h-3 text-emerald-400" />
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setIsVersionsModalOpen(true)}
+              className="px-2.5 py-1.5 rounded-xl bg-zinc-900 hover:bg-zinc-850 text-zinc-300 hover:text-white border border-zinc-700/80 transition flex items-center gap-1.5 font-medium"
+              title="Gerenciar versões de extrato deste cartão"
+            >
+              <History className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Versões</span>
+            </button>
+          )}
+
+          {/* Baixar Modelo CSV */}
+          <button
+            onClick={downloadStandardCsvTemplate}
+            className="p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-white border border-zinc-700/80 transition flex items-center gap-1"
+            title="Baixar Modelo CSV Padrão"
+          >
+            <Download className="w-3.5 h-3.5 text-emerald-400" />
+            <span className="hidden sm:inline">Modelo</span>
+          </button>
+
+          {/* Importar CSV */}
+          <button
+            onClick={onOpenCsvImport}
+            className="px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-bold transition flex items-center gap-1.5 shadow-sm"
+            title="Importar novo extrato/fatura em CSV"
+          >
+            <Upload className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Importar</span>
+          </button>
+
+          {/* Salvar no Firebase se houver pendências locais */}
+          {hasUnsavedChanges && (
+            <button
+              onClick={() => saveToFirebase()}
+              disabled={isSavingToFirebase}
+              className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-zinc-950 font-bold transition flex items-center gap-1 shadow-md animate-pulse"
+              title="Salvar alterações pendentes no Firebase"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>{isSavingToFirebase ? 'Salvando...' : 'Salvar Cloud'}</span>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Modal de Gerenciamento de Versões da Fatura */}
+      <InvoiceVersionsModal
+        isOpen={isVersionsModalOpen}
+        onClose={() => setIsVersionsModalOpen(false)}
+        cardId={activeCard.id}
+        month={selectedMonth}
+        onOpenCsvImport={onOpenCsvImport}
+      />
     </div>
   );
 };

@@ -76,6 +76,19 @@ export interface BankAccountConfig {
 
 export type InvoicePaymentStatus = 'unpaid' | 'paid_on_time' | 'paid_late' | 'partial_late';
 
+export interface InvoiceVersion {
+  id: string; // ID único da versão (ex: 'ver-173000-xyz')
+  cardId: string;
+  month: string; // YYYY-MM
+  name: string; // e.g. "Semana 2 - Prévia", "Fatura Final"
+  statementDate: string; // YYYY-MM-DD (data de extração do extrato)
+  createdAt: string; // ISO string
+  notes?: string;
+  totalAmount: number; // Total da fatura nesta versão
+  transactionCount: number; // Quantidade de transações
+  transactions: CardTransaction[]; // Snapshot completo das compras desta versão
+}
+
 export interface CreditCard {
   id: string;
   name: string;
@@ -94,6 +107,8 @@ export interface CreditCard {
   invoicePaidAmountByMonth?: Record<string, number>;
   invoicePaymentMonthByMonth?: Record<string, string>; // key: YYYY-MM -> valor pago (se parcial)
   lastConsolidatedAt?: Record<string, string>; // key: YYYY-MM -> ISO timestamp de consolidação da fatura
+  invoiceVersionsByMonth?: Record<string, InvoiceVersion[]>; // key: YYYY-MM -> lista de versões salvas
+  activeInvoiceVersionIdByMonth?: Record<string, string>; // key: YYYY-MM -> ID da versão atualmente ativa
 }
 
 export interface CardTransaction {

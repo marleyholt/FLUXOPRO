@@ -14,12 +14,14 @@ import {
   ArrowRight,
   TrendingDown,
   DollarSign,
+  Download,
 } from 'lucide-react';
 import { useFinance } from '../../context/FinanceContext';
 import { parseCreditCardCsv } from '../../utils/csvParser';
 import { parseCsvBankStatement, ParsedBankStatement } from '../../utils/bankStatementParser';
 import { CsvParsedItem, BankStatementUploadRecord } from '../../types/finance';
 import { formatBRL } from '../../utils/calculations';
+import { downloadStandardCsvTemplate } from '../../utils/csvTemplate';
 
 interface CsvImportModalProps {
   isOpen: boolean;
@@ -32,6 +34,7 @@ export const CsvImportModal: React.FC<CsvImportModalProps> = ({ isOpen, onClose 
     selectedMonth,
     summaries,
     importCsvTransactions,
+    importCsvTransactionsWithVersion,
     saveBankStatementResult,
     setCardRealInvoice,
   } = useFinance();
@@ -56,6 +59,11 @@ export const CsvImportModal: React.FC<CsvImportModalProps> = ({ isOpen, onClose 
   const [paymentDate, setPaymentDate] = useState<string>(
     `${selectedMonth}-${String(defaultDueDay).padStart(2, '0')}`
   );
+  const [statementDate, setStatementDate] = useState<string>(
+    new Date().toISOString().split('T')[0]
+  );
+  const [versionName, setVersionName] = useState<string>('');
+  const [versionNotes, setVersionNotes] = useState<string>('');
   const [cardItems, setCardItems] = useState<CsvParsedItem[]>([]);
   const [cardFileName, setCardFileName] = useState<string>('');
   const [updateRealInvoice, setUpdateRealInvoice] = useState<boolean>(true);
@@ -195,13 +203,23 @@ export const CsvImportModal: React.FC<CsvImportModalProps> = ({ isOpen, onClose 
     .filter((i) => i.selected)
     .reduce((acc, curr) => acc + curr.amount, 0);
 
-  // Approve and consolidate card invoice
+  // Approve and consolidate card invoice with versioning
   const handleApproveCard = () => {
     const activeCardId = selectedCardId || data.creditCards[0]?.id;
     if (!activeCardId || selectedCardCount === 0) return;
-    importCsvTransactions(activeCardId, targetMonth, cardItems, updateRealInvoice, paymentDate);
+    const finalVersionName = versionName.trim() || `Prévia (${statementDate})`;
+    importCsvTransactionsWithVersion({
+      cardId: activeCardId,
+      invoiceMonth: targetMonth,
+      items: cardItems,
+      updateRealInvoice,
+      paymentDate,
+      statementDate,
+      versionName: finalVersionName,
+      notes: versionNotes,
+    });
     const cardName = data.creditCards.find((c) => c.id === activeCardId)?.name || 'Cartão';
-    setSuccessMessage(`Fatura de ${cardName} consolidada com sucesso! ${selectedCardCount} compras registradas. Lembre-se de clicar em "Salvar no Firebase" no topo.`);
+    setSuccessMessage(`Versão "${finalVersionName}" de ${cardName} criada e ativada com sucesso! ${selectedCardCount} compras registradas.`);
     setTimeout(() => {
       setSuccessMessage(null);
       onClose();
@@ -410,6 +428,66 @@ export const CsvImportModal: React.FC<CsvImportModalProps> = ({ isOpen, onClose 
                     value={paymentDate}
                     onChange={(e) => setPaymentDate(e.target.value)}
                     className="w-full px-3 py-2 rounded-lg bg-zinc-950 border border-zinc-700 text-white outline-none focus:border-emerald-500 transition font-mono-numbers"
+                  />
+                </div>
+              </div>
+
+              {/* Versioning & Statement Metadata Grid */}
+              <div className="p-4 rounded-xl bg-zinc-900/60 border border-zinc-800 text-xs space-y-3">
+                <div className="flex items-center justify-between border-b border-zinc-800/80 pb-2">
+                  <span className="font-bold text-white flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+                    Identificação da Versão do Extrato (Acompanhamento Semanal)
+                  </span>
+                  <button
+                    type="button"
+                    onClick={downloadStandardCsvTemplate}
+                    className="px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-emerald-400 hover:text-emerald-300 font-bold transition flex items-center gap-1.5 border border-zinc-700 text-[11px]"
+                    title="Baixar arquivo modelo CSV no padrão aceito pelo sistema"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    Baixar Modelo CSV Padrão
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-zinc-300 font-medium block">
+                      Nome / Descrição da Versão
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Ex: Semana 1 - Prévia, Extrato 15/10, Fatura Final..."
+                      value={versionName}
+                      onChange={(e) => setVersionName(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg bg-zinc-950 border border-zinc-700 text-white outline-none focus:border-emerald-500 transition text-xs"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-zinc-300 font-medium block">
+                      Data da Retirada do Extrato
+                    </label>
+                    <input
+                      type="date"
+                      required
+                      value={statementDate}
+                      onChange={(e) => setStatementDate(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg bg-zinc-950 border border-zinc-700 text-white outline-none focus:border-emerald-500 transition text-xs font-mono-numbers"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-zinc-400 font-medium text-[11px] block">
+                    Observações da Versão (Opcional)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Ex: Não inclui compras do fim de semana; Extrato parcial baixado no app..."
+                    value={versionNotes}
+                    onChange={(e) => setVersionNotes(e.target.value)}
+                    className="w-full px-3 py-1.5 rounded-lg bg-zinc-950 border border-zinc-800 text-white outline-none focus:border-emerald-500 transition text-xs placeholder-zinc-500"
                   />
                 </div>
               </div>

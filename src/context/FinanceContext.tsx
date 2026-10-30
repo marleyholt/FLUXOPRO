@@ -18,6 +18,7 @@ import {
   BankAccountConfig,
   BankStatementUploadRecord,
   InvoicePaymentStatus,
+  InvoiceVersion,
 } from '../types/finance';
 import {
   loadAppData,
@@ -182,6 +183,18 @@ interface FinanceContextType {
     updateRealInvoice: boolean,
     paymentDate?: string
   ) => void;
+  importCsvTransactionsWithVersion: (params: {
+    cardId: string;
+    invoiceMonth: string;
+    items: CsvParsedItem[];
+    updateRealInvoice: boolean;
+    paymentDate?: string;
+    statementDate: string;
+    versionName: string;
+    notes?: string;
+  }) => void;
+  setActiveInvoiceVersion: (cardId: string, month: string, versionId: string) => void;
+  deleteInvoiceVersion: (cardId: string, month: string, versionId: string) => void;
 
   toggleChecklistStep: (stepId: string) => void;
   updateSettings: (settings: Partial<AppSettings>) => void;
@@ -1537,31 +1550,63 @@ function sanitizeAppData(loaded: AppData): AppData {
     [data, persistLocally]
   );
 
-  // CSV Import approval
-  const importCsvTransactions = useCallback(
-    (
-      cardId: string,
-      invoiceMonth: string,
-      items: CsvParsedItem[],
-      updateRealInvoice: boolean,
-      paymentDate?: string
-    ) => {
+  // CSV Import approval & Invoice Versioning
+  const importCsvTransactionsWithVersion = useCallback(
+    (params: {
+      cardId: string;
+      invoiceMonth: string;
+      items: CsvParsedItem[];
+      updateRealInvoice: boolean;
+      paymentDate?: string;
+      statementDate: string;
+      versionName: string;
+      notes?: string;
+    }) => {
+      const {
+        cardId,
+        invoiceMonth,
+        items,
+        updateRealInvoice,
+        paymentDate,
+        statementDate,
+        versionName,
+        notes,
+      } = params;
+
       const approvedItems = items.filter((item) => item.selected);
-      const newTransactions = approvedItems.map((item) =>
-        convertCsvItemToTransaction(item, cardId, invoiceMonth)
-      );
+      const newTransactions: CardTransaction[] = approvedItems.map((item) => ({
+        ...convertCsvItemToTransaction(item, cardId, invoiceMonth),
+        importedFromCsv: true,
+      }));
 
-      // ANTI-DUPLICIDADE: Excluir transações de projeção de rotativo criadas anteriormente para este cartão e mês
-      const filteredOldTransactions = data.cardTransactions.filter(
-        (t) => !(t.cardId === cardId && t.startMonth === invoiceMonth && t.isRotativoProjection)
-      );
-
-      let updatedCards = [...data.creditCards];
-      const nowIso = new Date().toISOString();
       const totalApproved = approvedItems.reduce((acc, curr) => acc + curr.amount, 0);
+      const nowIso = new Date().toISOString();
 
-      updatedCards = updatedCards.map((c) => {
+      const newVersion: InvoiceVersion = {
+        id: `ver-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        cardId,
+        month: invoiceMonth,
+        name: versionName.trim() || `Prévia (${statementDate || nowIso.split('T')[0]})`,
+        statementDate: statementDate || nowIso.split('T')[0],
+        createdAt: nowIso,
+        notes: notes?.trim() || undefined,
+        totalAmount: totalApproved,
+        transactionCount: newTransactions.length,
+        transactions: newTransactions,
+      };
+
+      const updatedCards = data.creditCards.map((c) => {
         if (c.id === cardId) {
+          const currentVersions = c.invoiceVersionsByMonth?.[invoiceMonth] || [];
+          const newVersions = [...currentVersions, newVersion];
+          const versionMap = {
+            ...(c.invoiceVersionsByMonth || {}),
+            [invoiceMonth]: newVersions,
+          };
+          const activeMap = {
+            ...(c.activeInvoiceVersionIdByMonth || {}),
+            [invoiceMonth]: newVersion.id,
+          };
           const realMap = { ...(c.realInvoiceTotalByMonth || {}) };
           const dateMap = { ...(c.invoicePaymentDateByMonth || {}) };
           const consolidatedMap = { ...(c.lastConsolidatedAt || {}) };
@@ -1577,6 +1622,8 @@ function sanitizeAppData(loaded: AppData): AppData {
 
           return {
             ...c,
+            invoiceVersionsByMonth: versionMap,
+            activeInvoiceVersionIdByMonth: activeMap,
             realInvoiceTotalByMonth: realMap,
             invoicePaymentDateByMonth: dateMap,
             lastConsolidatedAt: consolidatedMap,
@@ -1585,10 +1632,145 @@ function sanitizeAppData(loaded: AppData): AppData {
         return c;
       });
 
+      // Remove transações anteriores desta fatura que eram do CSV ou rotativo projetado
+      const filteredOldTransactions = data.cardTransactions.filter(
+        (t) => !(t.cardId === cardId && t.startMonth === invoiceMonth && (t.importedFromCsv || t.type === 'single' || t.isRotativoProjection))
+      );
+
       persistLocally({
         ...data,
         creditCards: updatedCards,
         cardTransactions: [...filteredOldTransactions, ...newTransactions],
+      });
+    },
+    [data, persistLocally]
+  );
+
+  const importCsvTransactions = useCallback(
+    (
+      cardId: string,
+      invoiceMonth: string,
+      items: CsvParsedItem[],
+      updateRealInvoice: boolean,
+      paymentDate?: string
+    ) => {
+      importCsvTransactionsWithVersion({
+        cardId,
+        invoiceMonth,
+        items,
+        updateRealInvoice,
+        paymentDate,
+        statementDate: new Date().toISOString().split('T')[0],
+        versionName: `Importação ${new Date().toLocaleDateString('pt-BR')}`,
+      });
+    },
+    [importCsvTransactionsWithVersion]
+  );
+
+  const setActiveInvoiceVersion = useCallback(
+    (cardId: string, month: string, versionId: string) => {
+      const card = data.creditCards.find((c) => c.id === cardId);
+      if (!card) return;
+
+      const versions = card.invoiceVersionsByMonth?.[month] || [];
+      const targetVersion = versions.find((v) => v.id === versionId);
+      if (!targetVersion) return;
+
+      // 1. Atualiza versão ativa e real total no cartão
+      const updatedCards = data.creditCards.map((c) => {
+        if (c.id === cardId) {
+          return {
+            ...c,
+            activeInvoiceVersionIdByMonth: {
+              ...(c.activeInvoiceVersionIdByMonth || {}),
+              [month]: versionId,
+            },
+            realInvoiceTotalByMonth: {
+              ...(c.realInvoiceTotalByMonth || {}),
+              [month]: targetVersion.totalAmount,
+            },
+          };
+        }
+        return c;
+      });
+
+      // 2. Substitui as transações daquele cartão e mês pelas transações da versão selecionada
+      const otherTransactions = data.cardTransactions.filter(
+        (t) => !(t.cardId === cardId && t.startMonth === month && (t.importedFromCsv || t.type === 'single' || t.isRotativoProjection))
+      );
+      const updatedTransactions = [...otherTransactions, ...targetVersion.transactions];
+
+      persistLocally({
+        ...data,
+        creditCards: updatedCards,
+        cardTransactions: updatedTransactions,
+      });
+    },
+    [data, persistLocally]
+  );
+
+  const deleteInvoiceVersion = useCallback(
+    (cardId: string, month: string, versionId: string) => {
+      const card = data.creditCards.find((c) => c.id === cardId);
+      if (!card) return;
+
+      const versions = card.invoiceVersionsByMonth?.[month] || [];
+      const remainingVersions = versions.filter((v) => v.id !== versionId);
+
+      const isActive = card.activeInvoiceVersionIdByMonth?.[month] === versionId;
+      const newActiveId = isActive
+        ? (remainingVersions.length > 0 ? remainingVersions[remainingVersions.length - 1].id : undefined)
+        : card.activeInvoiceVersionIdByMonth?.[month];
+
+      const newVersionMap = {
+        ...(card.invoiceVersionsByMonth || {}),
+        [month]: remainingVersions,
+      };
+
+      const newActiveMap = { ...(card.activeInvoiceVersionIdByMonth || {}) };
+      if (newActiveId) {
+        newActiveMap[month] = newActiveId;
+      } else {
+        delete newActiveMap[month];
+      }
+
+      let updatedTransactions = data.cardTransactions;
+      const updatedRealMap = { ...(card.realInvoiceTotalByMonth || {}) };
+
+      if (isActive) {
+        if (newActiveId) {
+          const fallbackVer = remainingVersions.find((v) => v.id === newActiveId);
+          if (fallbackVer) {
+            updatedRealMap[month] = fallbackVer.totalAmount;
+            const otherTransactions = data.cardTransactions.filter(
+              (t) => !(t.cardId === cardId && t.startMonth === month && (t.importedFromCsv || t.type === 'single' || t.isRotativoProjection))
+            );
+            updatedTransactions = [...otherTransactions, ...fallbackVer.transactions];
+          }
+        } else {
+          delete updatedRealMap[month];
+          updatedTransactions = data.cardTransactions.filter(
+            (t) => !(t.cardId === cardId && t.startMonth === month && (t.importedFromCsv || t.type === 'single' || t.isRotativoProjection))
+          );
+        }
+      }
+
+      const updatedCards = data.creditCards.map((c) => {
+        if (c.id === cardId) {
+          return {
+            ...c,
+            invoiceVersionsByMonth: newVersionMap,
+            activeInvoiceVersionIdByMonth: newActiveMap,
+            realInvoiceTotalByMonth: updatedRealMap,
+          };
+        }
+        return c;
+      });
+
+      persistLocally({
+        ...data,
+        creditCards: updatedCards,
+        cardTransactions: updatedTransactions,
       });
     },
     [data, persistLocally]
@@ -1777,6 +1959,9 @@ function sanitizeAppData(loaded: AppData): AppData {
         deleteCreditCard,
 
         importCsvTransactions,
+        importCsvTransactionsWithVersion,
+        setActiveInvoiceVersion,
+        deleteInvoiceVersion,
         toggleChecklistStep,
         updateSettings,
         restoreSeedData,
