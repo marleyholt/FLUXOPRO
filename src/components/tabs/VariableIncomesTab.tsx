@@ -9,9 +9,12 @@ import {
   CheckCircle,
   Sparkles,
   Repeat,
+  Edit2,
 } from 'lucide-react';
 import { useFinance } from '../../context/FinanceContext';
 import { formatBRL, getMonthLabel } from '../../utils/calculations';
+import { Income } from '../../types/finance';
+import { EditIncomeModal } from '../modals/EditIncomeModal';
 
 interface VariableIncomesTabProps {
   onOpenNewTransaction: () => void;
@@ -35,6 +38,7 @@ export const VariableIncomesTab: React.FC<VariableIncomesTabProps> = ({
   const [startMonth, setStartMonth] = useState(selectedMonth); // para recorrente início
   const [endMonth, setEndMonth] = useState(''); // para recorrente término (opcional)
   const [notes, setNotes] = useState('');
+  const [editingIncome, setEditingIncome] = useState<Income | null>(null);
 
   // Todas as receitas cadastradas
   const allIncomes = data.incomes;
@@ -352,17 +356,26 @@ export const VariableIncomesTab: React.FC<VariableIncomesTabProps> = ({
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-4 shrink-0">
+                    <div className="flex items-center gap-3 shrink-0">
                       <span className="font-mono-numbers font-extrabold text-emerald-400 text-sm">
                         {formatBRL(inc.amount)}
                       </span>
-                      <button
-                        onClick={() => deleteIncome(inc.id)}
-                        className="p-1.5 rounded-lg text-rose-400 hover:bg-rose-500/10 transition"
-                        title="Excluir receita"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => setEditingIncome(inc)}
+                          className="p-1.5 rounded-lg text-zinc-400 hover:text-emerald-400 hover:bg-emerald-500/10 transition"
+                          title="Editar receita"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => deleteIncome(inc.id)}
+                          className="p-1.5 rounded-lg text-zinc-400 hover:text-rose-400 hover:bg-rose-500/10 transition"
+                          title="Excluir receita"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -372,6 +385,13 @@ export const VariableIncomesTab: React.FC<VariableIncomesTabProps> = ({
         </div>
 
       </div>
+
+      {/* Modal de Edição de Receita */}
+      <EditIncomeModal
+        isOpen={!!editingIncome}
+        income={editingIncome}
+        onClose={() => setEditingIncome(null)}
+      />
     </div>
   );
 };

@@ -14,6 +14,7 @@ import {
   ArrowDownRight,
   Sparkles,
   History,
+  Edit2,
 } from 'lucide-react';
 import { useFinance } from '../../context/FinanceContext';
 import {
@@ -22,6 +23,8 @@ import {
   getInstallmentInfo,
   getMonthDiff,
 } from '../../utils/calculations';
+import { Income } from '../../types/finance';
+import { EditIncomeModal } from '../modals/EditIncomeModal';
 
 interface MatrixTabProps {
   onOpenNewTransaction: () => void;
@@ -33,6 +36,7 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
   onOpenCsvImport,
 }) => {
   const { data, summaries, scopeFilter, selectedMonth, setSelectedMonth, vigenteMonth, setActiveTab } = useFinance();
+  const [editingIncome, setEditingIncome] = useState<Income | null>(null);
 
   const handleCellClick = (
     month: string,
@@ -380,11 +384,24 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
 
                   {/* Individual Incomes */}
                   {filteredIncomes.map((inc) => (
-                    <tr key={inc.id} className="text-zinc-300 hover:bg-zinc-900/30">
+                    <tr key={inc.id} className="text-zinc-300 hover:bg-zinc-900/30 group">
                       <td className="sticky left-0 z-10 bg-zinc-950 py-2 px-4 pl-9 text-zinc-300 shadow-[2px_0_5px_rgba(0,0,0,0.5)]">
-                        <div className="flex items-center justify-between">
-                          <span className="truncate">{inc.title}</span>
-                          <span className="text-[9px] px-1 rounded bg-zinc-800 text-zinc-400 ml-1">
+                        <div className="flex items-center justify-between gap-1">
+                          <div className="flex items-center gap-1.5 truncate">
+                            <span className="truncate" title={inc.title}>{inc.title}</span>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEditingIncome(inc);
+                              }}
+                              className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-zinc-400 hover:text-emerald-400 hover:bg-zinc-800 transition shrink-0"
+                              title={`Editar receita "${inc.title}"`}
+                            >
+                              <Edit2 className="w-3 h-3" />
+                            </button>
+                          </div>
+                          <span className="text-[9px] px-1 rounded bg-zinc-800 text-zinc-400 shrink-0">
                             {inc.scope}
                           </span>
                         </div>
@@ -392,7 +409,9 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
                       {displayedSummaries.map((s) => {
                         let amount = 0;
                         if (inc.type === 'fixed') {
-                          if (getMonthDiff(inc.startMonth || '2025-12', s.month) >= 0) {
+                          const diffFromStart = getMonthDiff(inc.startMonth || '2025-12', s.month);
+                          const diffFromEnd = inc.endMonth ? getMonthDiff(s.month, inc.endMonth) : 0;
+                          if (diffFromStart >= 0 && (!inc.endMonth || diffFromEnd >= 0)) {
                             amount = inc.amount;
                           }
                         } else if (inc.type === 'variable') {
@@ -851,6 +870,13 @@ export const MatrixTab: React.FC<MatrixTabProps> = ({
           </table>
         </div>
       </div>
+
+      {/* Modal de Edição de Receita */}
+      <EditIncomeModal
+        isOpen={!!editingIncome}
+        income={editingIncome}
+        onClose={() => setEditingIncome(null)}
+      />
     </div>
   );
 };
